@@ -73,7 +73,7 @@
     "@univerjs/presets": "^0.6.6",
     "ag-charts-vue3": "^11.3.2",
     "ag-grid-enterprise": "35.1.0",
-    "ag-grid-vue3": "35.1.0",
+    "ag-grid-vue3": "35.2.1",
     "better-sqlite3": "^12.6.2",
     "danfojs": "^1.2.0",
     "handsontable": "^17.0.0",
