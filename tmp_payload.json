@@ -1,0 +1,10 @@
+{
+  "items": [
+    {
+      "onCommand": "TCMD_ON_TEST",
+      "offCommand": "TCMD_OFF_TEST",
+      "subsystems": ["PLD"],
+      "description": "Test pair"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "C:\\Windows\\System32\\cmd.exe",
+      "runtimeArgs": ["/c", "C:\\Users\\PCC_R\\AppData\\Roaming\\npm\\yarn.cmd", "dev"],
+      "port": 3000,
+      "cwd": "E:\\OfficePC\\2026\\GUI_Primev4"
+    }
+  ]
+}
