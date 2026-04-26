@@ -60,7 +60,7 @@
 
       <div v-if="form.name.trim() && form.code.trim()" class="flex-1">
         <label class="field-label">Modulation Type</label>
-        <Dropdown
+        <Select
           v-model="form.modulation_type"
           :options="modulationOptions"
           placeholder="Select modulation"

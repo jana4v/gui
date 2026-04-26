@@ -1,43 +1,31 @@
-import * as wamp from 'autobahn-browser/autobahn.min.js'
+const NATS_COMPAT_STATE_KEY = 'nats-compat-client'
 
-export default defineNuxtPlugin((nuxtApp) => {
-  if (!import.meta.client) {
-    return {
-      provide: {
-        wamp2: null, // Return null on the server side
-      },
-    }
+function createDisabledCompatClient() {
+  return {
+    isOpen: false,
+    async subscribe(subject) {
+      return {
+        id: `disabled:${subject}`,
+        subject,
+      }
+    },
+    unsubscribe() {},
+    publish() {},
+    async call(subject) {
+      return {
+        data: null,
+        error: `WAMP disabled: ${subject}`,
+      }
+    },
+    close() {},
   }
+}
 
-  return new Promise((resolve, reject) => {
-    let host_name = window.location.hostname
-    if (host_name === 'localhost') {
-      host_name = '127.0.0.1'
-    }
-
-    const connection = new wamp.Connection({
-      url: `ws://${host_name}/ws`,
-      realm: 'realm1',
-    })
-
-    connection.onopen = (session) => {
-      console.log('WAMP Connected...')
-      resolve({
-        provide: {
-          wamp2: session, // Ensure we provide the session
-        },
-      })
-    }
-
-    connection.onclose = (reason, details) => {
-      console.error(`WAMP connection closed: ${reason}`)
-      resolve({
-        provide: {
-          wamp2: null, // Ensure `wamp` is always provided
-        },
-      })
-    }
-
-    connection.open()
-  })
+export default defineNuxtPlugin(() => {
+  const state = useState(NATS_COMPAT_STATE_KEY, () => createDisabledCompatClient())
+  return {
+    provide: {
+      wamp2: state.value,
+    },
+  }
 })

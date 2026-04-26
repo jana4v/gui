@@ -34,6 +34,28 @@ export default defineNuxtConfig({
 
   // Performance optimizations
   vite: {
+    optimizeDeps: {
+      exclude: ['monaco-editor'],
+    },
+    plugins: [
+      {
+        // monaco-editor's marked.js has a sourceMappingURL pointing to a file
+        // that is not shipped in the npm package. Vite reads the reference at
+        // load time, so strip the comment in a pre-load hook to avoid the WARN.
+        name: 'monaco-sourcemap-fix',
+        enforce: 'pre' as const,
+        async load(id: string) {
+          if (id.includes('monaco-editor') && id.replace(/\\/g, '/').includes('/marked/marked.js')) {
+            const { readFile } = await import('node:fs/promises')
+            const code = await readFile(id.split('?')[0], 'utf-8')
+            return {
+              code: code.replace(/\/\/# sourceMappingURL=\S+\.map\b/g, ''),
+              map: null,
+            }
+          }
+        },
+      },
+    ],
     build: {
       rollupOptions: {
         // @univerjs packages declare react/react-dom as peer deps but this app
@@ -56,7 +78,6 @@ export default defineNuxtConfig({
     '@pinia/nuxt',
     '@nuxt/content',
     '@vueuse/nuxt',
-    '@nuxt/test-utils/module',
     '@nuxt/image',
     '@nuxt/fonts',
     '@primevue/nuxt-module',
