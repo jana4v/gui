@@ -2,6 +2,35 @@
 import { defineComponent, reactive, ref, toRefs } from 'vue'
 import HandSonTbl from '@/components/HandsonTable/HandSonTbl.vue'
 
+function formatCompactTableData(value) {
+  if (!Array.isArray(value)) {
+    return ''
+  }
+
+  return value
+    .map((row) => {
+      if (Array.isArray(row)) {
+        return row
+          .filter(cell => cell !== null && cell !== undefined && `${cell}`.trim() !== '')
+          .map(cell => `${cell}`.trim())
+          .join(',')
+      }
+
+      if (row && typeof row === 'object') {
+        const offset = row.offset ?? row.Offset ?? row[0]
+        const cellValue = row.value ?? row.Value ?? row[1]
+        return [offset, cellValue]
+          .filter(cell => cell !== null && cell !== undefined && `${cell}`.trim() !== '')
+          .map(cell => `${cell}`.trim())
+          .join(',')
+      }
+
+      return `${row}`.trim()
+    })
+    .filter(rowText => rowText !== '')
+    .join('; ')
+}
+
 export default defineComponent({
   name: 'HandsonTableCellRenderer',
   components: {
@@ -17,6 +46,7 @@ export default defineComponent({
     const data = reactive({
       tbl_settings: params.tbl_settings,
       table_data: [],
+      compact_text: '',
       counter: 0,
       is_data_exist: true,
     })
@@ -60,8 +90,14 @@ export default defineComponent({
         try {
           data.table_data = params.value
           data.is_data_exist = params.value.length > 0
-          const height = get_row_height()
-          changeRowHeight(height + 25 * 2)
+          if (params.compactText === true) {
+            data.compact_text = formatCompactTableData(params.value)
+            changeRowHeight(48)
+          }
+          else {
+            const height = get_row_height()
+            changeRowHeight(height + 25 * 2)
+          }
         }
         catch (error) {
           console.log(error)
@@ -97,10 +133,18 @@ export default defineComponent({
 
 <template>
   <div class="my-2 p-2" :style="style">
-    <HandSonTbl v-if="is_data_exist" :key="counter" :data="table_data" :hot-settings="tbl_settings" />
+    <div v-if="params.compactText === true" class="compact-table-text">
+      {{ compact_text }}
+    </div>
+    <HandSonTbl v-else-if="is_data_exist" :key="counter" :data="table_data" :hot-settings="tbl_settings" />
   </div>
 </template>
 
 <style>
+.compact-table-text {
+  white-space: normal;
+  line-height: 1.4;
+  text-align: left;
+}
 
 </style>

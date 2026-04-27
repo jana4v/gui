@@ -1,22 +1,8 @@
 <template>
-  <div class="spurious-fbt-cell" @mousedown.stop @click.stop @contextmenu.stop>
-    <div class="fbt-preview" :class="{ editable: isEditable }" @dblclick="openEditor">
-      <table>
-        <thead>
-          <tr>
-            <th>Offset (kHz)</th>
-            <th>Value (dBc)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(row, idx) in tableData" :key="idx">
-            <td>{{ formatValue(row[0]) }}</td>
-            <td>{{ formatValue(row[1]) }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <div v-if="isEditable" class="edit-overlay">
-        <i class="pi pi-pencil" />
+  <div class="spurious-fbt-cell">
+    <div class="fbt-preview">
+      <div class="fbt-preview-text">
+        {{ compactPreview }}
       </div>
     </div>
 
@@ -50,6 +36,8 @@ import Button from 'primevue/button';
 registerAllModules();
 
 type FbtMatrix = (string | number)[][];
+
+const HEADER_LABELS = new Set(['offset (khz)', 'value (dbc)', 'value (dbc)', 'offset', 'value']);
 
 const props = defineProps<{ params: any }>();
 
@@ -94,8 +82,34 @@ const dialogTitle = computed(() => {
   return `Edit ${displayName} - Row ${(props.params?.node?.rowIndex ?? 0) + 1}`;
 });
 
+function isMeaningfulCell(cell: string | number | null | undefined): boolean {
+  if (cell === '' || cell === null || cell === undefined) return false;
+  const normalized = String(cell)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[()]/g, '');
+  return !HEADER_LABELS.has(normalized);
+}
+
+const compactPreview = computed(() => {
+  const segments = tableData.value
+    .map((row) => {
+      if (!Array.isArray(row)) return '';
+      const pair = row
+        .slice(0, 2)
+        .filter(cell => isMeaningfulCell(cell))
+        .map(cell => formatValue(cell))
+        .filter(text => text !== '');
+      return pair.join(', ');
+    })
+    .filter(segment => segment !== '');
+
+  return segments.length > 0 ? segments.join('; ') : '';
+});
+
 function formatValue(val: string | number | undefined): string {
-  if (val === '' || val === null || val === undefined) return '-';
+  if (!isMeaningfulCell(val)) return '';
   if (typeof val === 'number') return val.toFixed(2);
   return String(val);
 }
@@ -132,6 +146,10 @@ async function saveChanges() {
 
   showDialog.value = false;
 }
+
+defineExpose({
+  openEditor,
+});
 
 const hotSettings = computed(() => ({
   licenseKey: 'non-commercial-and-evaluation',
@@ -180,72 +198,25 @@ const hotSettings = computed(() => ({
   width: 100% !important;
   height: 100% !important;
   padding: 2px 0 !important;
+  pointer-events: auto;
 }
 
 .fbt-preview {
-  position: relative;
   width: 100% !important;
-  border: 1px solid rgba(148, 163, 184, 0.45) !important;
-  border-radius: 2px !important;
-  overflow: auto !important;
-  max-height: 168px;
-  background: var(--surface-0) !important;
+  min-height: 1.1rem;
+  padding: 0 !important;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
-.fbt-preview.editable {
-  cursor: pointer !important;
-}
-
-.fbt-preview.editable:hover {
-  border-color: var(--primary-color) !important;
-}
-
-.fbt-preview table {
-  width: 100% !important;
-  border-collapse: collapse !important;
-  table-layout: fixed !important;
-  font-variant-numeric: tabular-nums;
-}
-
-.fbt-preview thead th {
-  background: rgba(148, 163, 184, 0.12) !important;
-  color: var(--text-color-secondary) !important;
-  font-size: 0.68rem !important;
-  font-weight: 600 !important;
-  text-align: left !important;
-  line-height: 1.1 !important;
-  padding: 2px 4px !important;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.45) !important;
-  border-right: 1px solid rgba(148, 163, 184, 0.35) !important;
-}
-
-.fbt-preview tbody td {
-  padding: 1px 4px !important;
-  font-size: 0.7rem !important;
-  line-height: 1.2 !important;
+.fbt-preview-text {
   color: var(--text-color) !important;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.38) !important;
-  border-right: 1px solid rgba(148, 163, 184, 0.30) !important;
-}
-
-.fbt-preview thead th:last-child,
-.fbt-preview tbody td:last-child {
-  border-right: none !important;
-}
-
-.edit-overlay {
-  position: absolute !important;
-  top: 4px !important;
-  right: 4px !important;
-  font-size: 0.72rem !important;
-  color: var(--primary-color) !important;
-  opacity: 0 !important;
-  transition: opacity 0.15s ease !important;
-  pointer-events: none !important;
-}
-
-.fbt-preview.editable:hover .edit-overlay {
-  opacity: 1 !important;
+  font-size: 0.76rem !important;
+  line-height: 1.35 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+  min-height: 1.1rem;
 }
 
 .editor-wrap {

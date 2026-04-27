@@ -597,6 +597,7 @@ const spurious_spec_cellEditor_renderer_Params = {
     ],
   },
   style: { width: '300px' },
+  compactText: true,
 }
 
 tableConfig['specifications#transmitter#spurious'] = [

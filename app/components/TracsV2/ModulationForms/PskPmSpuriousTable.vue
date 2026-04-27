@@ -189,26 +189,26 @@ const getRowId = (params: any) =>
   `${params.data.port}|${params.data.frequency_label}|${params.data.frequency}`;
 
 const getRowHeight = (params: any): number => {
-  // Dynamic height based on all rows in nested Handsontables
   const data = params?.data;
   if (!data) return 90;
 
-  // Get the maximum row count from all three FBT columns
-  const fbtRows = Array.isArray(data.fbt) ? data.fbt.length : 1;
-  const fbtHotRows = Array.isArray(data.fbt_hot) ? data.fbt_hot.length : 1;
-  const fbtColdRows = Array.isArray(data.fbt_cold) ? data.fbt_cold.length : 1;
-  
-  const maxRows = Math.max(fbtRows, fbtHotRows, fbtColdRows);
+  const toCompactText = (value: unknown) => {
+    if (!Array.isArray(value)) return '';
+    return value
+      .map((row: any) => Array.isArray(row) ? row.filter((cell: any) => cell !== '' && cell !== null && cell !== undefined).join(', ') : '')
+      .filter((segment: string) => segment !== '')
+      .join('; ');
+  };
 
-  // Calculate height based on actual row count (header + rows + padding)
-  // Increased values to match Handsontable's actual rendered height
-  const headerHeight = 32; // Handsontable header with borders
-  const rowHeight = 28; // Handsontable row including borders and padding
-  const basePadding = 60; // Base padding for cell and border spacing
-  const calculatedHeight = basePadding + headerHeight + (maxRows * rowHeight) + 12;
-  
-  // Ensure minimum height
-  return Math.max(calculatedHeight, 120);
+  const maxTextLength = Math.max(
+    toCompactText(data.fbt).length,
+    toCompactText(data.fbt_hot).length,
+    toCompactText(data.fbt_cold).length,
+  );
+
+  if (maxTextLength <= 48) return 78;
+  if (maxTextLength <= 120) return 104;
+  return 132;
 };
 
 // ── When isEditable changes, refresh FBT cells so the nested cell renderers

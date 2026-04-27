@@ -29,29 +29,58 @@
       <ag-grid-vue
         class="spec-grid"
         :style="{ width: '100%', height: isSingleParameterView ? '100%' : '320px' }"
+        :gridOptions="gridOptions"
         :theme="isDark
           ? themeQuartz.withPart(colorSchemeDarkBlue)
           : themeQuartz.withPart(colorSchemeLightCold)"
         :columnDefs="columnDefsByParameter[parameter]"
         :rowData="tableRows[parameter]"
+        :enableRangeSelection="true"
+        :enableFillHandle="true"
         :getRowHeight="(params) => getRowHeight(parameter, params)"
         :defaultColDef="defaultColDef"
         :rowGroupPanelShow="'always'"
         :groupDisplayType="'singleColumn'"
         :cellSelection="cellSelectionConfig"
+        :suppressClickEdit="true"
+        :suppressColumnVirtualisation="true"
         :suppressContextMenu="true"
         :suppressMovableColumns="true"
         :undoRedoCellEditing="true"
         :undoRedoCellEditingLimit="20"
+        @cell-double-clicked="onCellDoubleClickedParameter(parameter, $event)"
+        @cell-key-down="onCellKeyDownParameter(parameter, $event)"
         @grid-ready="onGridReadyParameter(parameter, $event)"
         @first-data-rendered="onFirstDataRenderedParameter(parameter, $event)"
         @model-updated="onModelUpdatedParameter(parameter, $event)"
       />
     </div>
+
+    <Dialog
+      v-model:visible="showFbtDialog"
+      modal
+      :header="fbtDialogTitle"
+      :style="{ width: '620px' }"
+      :dismissableMask="true"
+    >
+      <div class="editor-wrap">
+        <HotTable :settings="fbtHotSettings" :data="fbtEditingData" />
+      </div>
+
+      <template #footer>
+        <Button label="Cancel" icon="pi pi-times" text @click="closeFbtEditor" />
+        <Button label="Save" icon="pi pi-check" @click="saveFbtEditor" />
+      </template>
+    </Dialog>
   </div>
 </template>
 
 <script lang="ts" setup>
+import { HotTable } from '@handsontable/vue3';
+import { registerAllModules } from 'handsontable/registry';
+import 'handsontable/styles/handsontable.css';
+import 'handsontable/styles/ht-theme-main-no-icons.css';
+import Dialog from 'primevue/dialog';
 import { useToast } from 'primevue/usetoast';
 import { ModuleRegistry } from 'ag-grid-community';
 import { AllEnterpriseModule } from 'ag-grid-enterprise';
@@ -61,6 +90,7 @@ import {
   themeQuartz,
 } from 'ag-grid-community';
 import type {
+  CellClickedEvent,
   ColDef,
   ColGroupDef,
   FirstDataRenderedEvent,
@@ -78,6 +108,9 @@ import {
 } from '@/composables/tracsV2/useTransmitterApi';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
+registerAllModules();
+
+type FbtMatrix = (string | number)[][];
 
 const api = useTransmitterApi();
 const toast = useToast();
@@ -106,9 +139,9 @@ const sectionTitles: Record<ParameterName, string> = {
   spurious: 'Spurious',
 };
 
-const spuriousFbtRenderer = markRaw(PskPmSpuriousFbtCellAgGrid);
-const spuriousFbtHotRenderer = markRaw(PskPmSpuriousFbtCellAgGrid);
-const spuriousFbtColdRenderer = markRaw(PskPmSpuriousFbtCellAgGrid);
+const spuriousFbtRenderer = markRaw({ ...PskPmSpuriousFbtCellAgGrid });
+const spuriousFbtHotRenderer = markRaw({ ...PskPmSpuriousFbtCellAgGrid });
+const spuriousFbtColdRenderer = markRaw({ ...PskPmSpuriousFbtCellAgGrid });
 
 type GridColumnDef = ColDef | ColGroupDef;
 
@@ -134,6 +167,65 @@ const saving = reactive<Record<ParameterName, boolean>>({
 });
 
 const gridApis = shallowRef<Partial<Record<ParameterName, GridApi>>>({});
+const showFbtDialog = ref(false);
+const fbtEditingData = ref<FbtMatrix>([['', '']]);
+const activeFbtField = ref('');
+const activeFbtNode = shallowRef<any>(null);
+const fbtDialogTitle = computed(() => {
+  const displayName = activeFbtField.value === 'fbt'
+    ? 'FBT'
+    : activeFbtField.value === 'fbt_hot'
+      ? 'FBT Hot'
+      : 'FBT Cold';
+
+  const row = (activeFbtNode.value?.data ?? {}) as Record<string, unknown>;
+  const code = String(row.code ?? '').trim();
+  const port = String(row.port ?? '').trim();
+  const frequencyLabel = String(row.frequency_label ?? row.frequency ?? '').trim();
+  const rowIdentity = [code, port, frequencyLabel].filter(Boolean).join('_');
+  return rowIdentity ? `Edit ${displayName} - ${rowIdentity}` : `Edit ${displayName}`;
+});
+
+const fbtHotSettings = computed(() => ({
+  licenseKey: 'non-commercial-and-evaluation',
+  colHeaders: ['Offset (kHz)', 'Value (dBc)'],
+  columns: [
+    {
+      type: 'numeric',
+      locale: 'en-US',
+      numericFormat: {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+        useGrouping: true,
+      },
+    },
+    {
+      type: 'numeric',
+      locale: 'en-US',
+      numericFormat: {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+        useGrouping: true,
+      },
+    },
+  ],
+  rowHeaders: true,
+  stretchH: 'all',
+  width: '100%',
+  minRows: 1,
+  minSpareRows: 1,
+  contextMenu: true,
+  height: 380,
+  autoWrapRow: true,
+  autoWrapCol: true,
+  copyPaste: true,
+  fillHandle: {
+    direction: 'vertical',
+    autoInsertRow: true,
+  },
+  enterMoves: { row: 1, col: 0 },
+  tabMoves: { row: 0, col: 1 },
+}));
 
 const defaultColDef: ColDef = {
   editable: true,
@@ -144,17 +236,139 @@ const defaultColDef: ColDef = {
   minWidth: 120,
 };
 
+const gridOptions = {
+  singleClickEdit: false,
+  suppressClickEdit: true,
+  suppressColumnVirtualisation: true,
+  suppressAnimationFrame: true,
+  processCellForClipboard: (params: any) => {
+    if (isFbtField(params.column?.getColId?.() ?? params.column?.colId ?? params.colDef?.field)) {
+      return toFbtClipboardText(params.value);
+    }
+    return params.value;
+  },
+  processCellFromClipboard: (params: any) => {
+    if (isFbtField(params.column?.getColId?.() ?? params.column?.colId ?? params.colDef?.field)) {
+      return parseFbtClipboardValue(params.value);
+    }
+    return params.value;
+  },
+};
+
 const cellSelectionConfig = {
   mode: 'range' as const,
   handle: {
     mode: 'fill' as const,
-    direction: 'y' as const,
+    direction: 'xy' as const,
     suppressClearOnFillReduction: true,
+    setFillValue: (params: any) => {
+      const values = params?.values;
+      if (Array.isArray(values) && values.length > 0) {
+        const sourceValue = values[values.length - 1];
+        if (Array.isArray(sourceValue)) {
+          return sourceValue.map((row: any) => Array.isArray(row) ? [...row] : row);
+        }
+        return sourceValue;
+      }
+
+      const currentValue = params?.currentCellValue;
+      if (Array.isArray(currentValue)) {
+        return currentValue.map((row: any) => Array.isArray(row) ? [...row] : row);
+      }
+      return currentValue;
+    },
   },
 };
 
 const metaKeys = new Set(['transmitter_code', 'transmitter_name', 'modulation_type']);
 const readOnlyKeys = new Set(['code', 'port', 'frequency_label', 'frequency']);
+
+function isFbtField(field: unknown): field is 'fbt' | 'fbt_hot' | 'fbt_cold' {
+  return field === 'fbt' || field === 'fbt_hot' || field === 'fbt_cold';
+}
+
+function toFbtClipboardText(value: unknown): string {
+  const matrix = ensureFbtMatrix(value);
+  const rows = matrix
+    .map((row) => row.map((cell) => `${cell ?? ''}`.trim()).filter(Boolean))
+    .filter((row) => row.length > 0);
+
+  if (!rows.length) return '';
+  return rows.map((row) => row.join(', ')).join('; ');
+}
+
+function parseFbtClipboardValue(value: unknown): FbtMatrix {
+  if (Array.isArray(value)) {
+    return ensureFbtMatrix(value).map((row) => [...row]);
+  }
+
+  const text = `${value ?? ''}`.trim();
+  if (!text) return [['', '']];
+
+  const tabularRows = text
+    .split(/\r?\n/)
+    .map((line) => line.split('\t').map((cell) => cell.trim()))
+    .filter((row) => row.some(Boolean));
+
+  if (tabularRows.length > 1 || (tabularRows[0]?.length ?? 0) > 1) {
+    return tabularRows.map((row) => normalizeFbtRow(row));
+  }
+
+  return text
+    .split(';')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .map((segment) => normalizeFbtRow(segment.split(',').map((cell) => cell.trim())));
+}
+
+function normalizeFbtRow(row: unknown[]): (string | number)[] {
+  const normalized = row.slice(0, 2).map((cell) => {
+    const text = `${cell ?? ''}`.trim();
+    if (text === '') return '';
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : text;
+  });
+
+  while (normalized.length < 2) normalized.push('');
+  return normalized;
+}
+
+function getSelectedFbtTargets(api: GridApi, fallbackEvent?: any): Array<{ rowNode: any; field: 'fbt' | 'fbt_hot' | 'fbt_cold' }> {
+  const ranges = api.getCellRanges?.() ?? [];
+  const targets: Array<{ rowNode: any; field: 'fbt' | 'fbt_hot' | 'fbt_cold' }> = [];
+
+  for (const range of ranges) {
+    const start = Math.min(range.startRow?.rowIndex ?? 0, range.endRow?.rowIndex ?? 0);
+    const end = Math.max(range.startRow?.rowIndex ?? 0, range.endRow?.rowIndex ?? 0);
+    const fields = (range.columns ?? [])
+      .map((column: any) => column.getColId?.() ?? column.colId)
+      .filter(isFbtField);
+
+    for (let rowIndex = start; rowIndex <= end; rowIndex += 1) {
+      const rowNode = api.getDisplayedRowAtIndex?.(rowIndex);
+      if (!rowNode) continue;
+      for (const field of fields) {
+        targets.push({ rowNode, field });
+      }
+    }
+  }
+
+  if (targets.length > 0) return targets;
+
+  const eventField = fallbackEvent?.colDef?.field;
+  if (isFbtField(eventField) && fallbackEvent?.node) {
+    return [{ rowNode: fallbackEvent.node, field: eventField }];
+  }
+
+  const focused = api.getFocusedCell?.();
+  const focusedField = focused?.column?.getColId?.() ?? focused?.column?.colId;
+  if (isFbtField(focusedField)) {
+    const rowNode = api.getDisplayedRowAtIndex?.(focused.rowIndex);
+    if (rowNode) return [{ rowNode, field: focusedField }];
+  }
+
+  return [];
+}
 
 function createBaseColumn(key: string): ColDef {
   return {
@@ -259,12 +473,17 @@ function buildColumns(parameter: ParameterName, rows: Record<string, any>[]): Gr
 
       return {
         ...createBaseColumn(key),
-        editable: false,
+        editable: true,
         minWidth: 180,
         width: 210,
         maxWidth: 240,
+        suppressFillHandle: false,
         cellRenderer: rendererByField[key],
         cellRendererParams: { isEditable: true },
+        valueSetter: (params) => {
+          params.data[key] = params.newValue;
+          return true;
+        },
       } as ColDef;
     });
   }
@@ -396,6 +615,87 @@ function onFirstDataRenderedParameter(parameter: ParameterName, _event: FirstDat
 
 function onModelUpdatedParameter(parameter: ParameterName, _event: ModelUpdatedEvent) {
   setTimeout(() => autoSizeDisplayedColumns(parameter), 0);
+}
+
+function onCellDoubleClickedParameter(parameter: ParameterName, event: CellClickedEvent) {
+  if (parameter !== 'spurious') return;
+
+  const field = String(event.colDef?.field ?? '');
+  if (!isFbtField(field)) return;
+
+  const target = event.event?.target as HTMLElement | null;
+  if (target?.closest?.('.ag-fill-handle')) return;
+
+  activeFbtField.value = field;
+  activeFbtNode.value = event.node;
+  fbtEditingData.value = ensureFbtMatrix(event.value).map(row => [...row]);
+  showFbtDialog.value = true;
+}
+
+function onCellKeyDownParameter(parameter: ParameterName, event: any) {
+  if (parameter !== 'spurious') return;
+
+  const keyboardEvent = event?.event as KeyboardEvent | undefined;
+  if (!keyboardEvent) return;
+
+  const field = event?.colDef?.field;
+  const targets = getSelectedFbtTargets(event.api, event);
+  const isFbtTarget = isFbtField(field) || targets.length > 0;
+  if (!isFbtTarget) return;
+
+  const key = keyboardEvent.key.toLowerCase();
+  const isCopy = (keyboardEvent.ctrlKey || keyboardEvent.metaKey) && key === 'c';
+  const isPaste = (keyboardEvent.ctrlKey || keyboardEvent.metaKey) && key === 'v';
+  const isDelete = key === 'delete' || key === 'backspace';
+
+  if (isCopy) {
+    event.api?.copySelectedRangeToClipboard?.();
+    keyboardEvent.preventDefault();
+    keyboardEvent.stopPropagation();
+    return;
+  }
+
+  if (isPaste) {
+    event.api?.pasteFromClipboard?.();
+    keyboardEvent.preventDefault();
+    keyboardEvent.stopPropagation();
+    return;
+  }
+
+  if (isDelete) {
+    for (const target of targets) {
+      target.rowNode?.setDataValue?.(target.field, [['', '']]);
+    }
+    event.api?.resetRowHeights?.();
+    keyboardEvent.preventDefault();
+    keyboardEvent.stopPropagation();
+  }
+}
+
+function ensureFbtMatrix(value: unknown): FbtMatrix {
+  if (Array.isArray(value) && value.length > 0 && value.every((row) => Array.isArray(row))) {
+    return value as FbtMatrix;
+  }
+  return [['', '']];
+}
+
+function closeFbtEditor() {
+  showFbtDialog.value = false;
+}
+
+async function saveFbtEditor() {
+  const cleanedData = fbtEditingData.value.filter((row) =>
+    row.some((cell) => cell !== '' && cell !== null && cell !== undefined),
+  );
+  const finalData = cleanedData.length > 0 ? cleanedData : [['', '']];
+
+  if (activeFbtField.value && activeFbtNode.value) {
+    activeFbtNode.value.setDataValue(activeFbtField.value, finalData);
+    await nextTick();
+    activeFbtNode.value?.gridApi?.resetRowHeights?.();
+  }
+
+  showFbtDialog.value = false;
 }
 
 function getRowHeight(parameter: ParameterName, params: RowHeightParams): number {
