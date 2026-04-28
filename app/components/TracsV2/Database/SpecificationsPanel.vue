@@ -103,8 +103,8 @@ import { AgGridVue } from 'ag-grid-vue3';
 import PskPmSpuriousFbtCellAgGrid from '@/components/TracsV2/ModulationForms/PskPmSpuriousFbtCellAgGrid.vue';
 import {
   useTransmitterApi,
+  type CatalogSpecRow,
   type ParameterName,
-  type ParameterRowsResponse,
 } from '@/composables/tracsV2/useTransmitterApi';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
@@ -125,7 +125,7 @@ const props = withDefaults(
   },
 );
 
-const parameterOrder: ParameterName[] = ['power', 'frequency', 'modulation_index', 'spurious'];
+const parameterOrder: ParameterName[] = ['power', 'frequency', 'modulation_index', 'spurious', 'command_threshold'];
 const visibleParameters = computed<ParameterName[]>(() => {
   if (props.activeParameter === 'all') return parameterOrder;
   return [props.activeParameter];
@@ -137,6 +137,7 @@ const sectionTitles: Record<ParameterName, string> = {
   frequency: 'Frequency',
   modulation_index: 'Modulation Index',
   spurious: 'Spurious',
+  command_threshold: 'Command Threshold',
 };
 
 const spuriousFbtRenderer = markRaw({ ...PskPmSpuriousFbtCellAgGrid });
@@ -150,6 +151,7 @@ const tableRows = reactive<Record<ParameterName, Record<string, any>[]>>({
   frequency: [],
   modulation_index: [],
   spurious: [],
+  command_threshold: [],
 });
 
 const columnDefsByParameter = reactive<Record<ParameterName, GridColumnDef[]>>({
@@ -157,6 +159,7 @@ const columnDefsByParameter = reactive<Record<ParameterName, GridColumnDef[]>>({
   frequency: [],
   modulation_index: [],
   spurious: [],
+  command_threshold: [],
 });
 
 const saving = reactive<Record<ParameterName, boolean>>({
@@ -164,6 +167,7 @@ const saving = reactive<Record<ParameterName, boolean>>({
   frequency: false,
   modulation_index: false,
   spurious: false,
+  command_threshold: false,
 });
 
 const gridApis = shallowRef<Partial<Record<ParameterName, GridApi>>>({});
@@ -282,6 +286,29 @@ const cellSelectionConfig = {
 
 const metaKeys = new Set(['transmitter_code', 'transmitter_name', 'modulation_type']);
 const readOnlyKeys = new Set(['code', 'port', 'frequency_label', 'frequency']);
+const structuralKeys = new Set([
+  'row_id',
+  'system_kind',
+  'system_code',
+  'parameter_type',
+  'port_id',
+  'frequency_id',
+  'sort_order',
+  'code',
+  'port',
+  'frequency_label',
+  'frequency',
+  'frequency_hz',
+]);
+const hiddenGridKeys = new Set([
+  'row_id',
+  'system_kind',
+  'system_code',
+  'parameter_type',
+  'port_id',
+  'frequency_id',
+  'sort_order',
+]);
 
 function isFbtField(field: unknown): field is 'fbt' | 'fbt_hot' | 'fbt_cold' {
   return field === 'fbt' || field === 'fbt_hot' || field === 'fbt_cold';
@@ -434,7 +461,7 @@ function buildColumns(parameter: ParameterName, rows: Record<string, any>[]): Gr
     const nonToneOrdered = [
       ...preferred.filter((k) => allKeys.has(k)),
       ...[...allKeys].filter(
-        (k) => !preferred.includes(k) && !metaKeys.has(k) && !toneCols.includes(k),
+        (k) => !preferred.includes(k) && !metaKeys.has(k) && !toneCols.includes(k) && !hiddenGridKeys.has(k),
       ),
     ];
 
@@ -459,7 +486,7 @@ function buildColumns(parameter: ParameterName, rows: Record<string, any>[]): Gr
     const hiddenSpuriousKeys = new Set(['profile_name', 'profiles', 'tolerance', 'enable']);
     const ordered = [
       ...preferred.filter((k) => allKeys.has(k)),
-      ...[...allKeys].filter((k) => !preferred.includes(k) && !metaKeys.has(k) && !hiddenSpuriousKeys.has(k)),
+      ...[...allKeys].filter((k) => !preferred.includes(k) && !metaKeys.has(k) && !hiddenSpuriousKeys.has(k) && !hiddenGridKeys.has(k)),
     ];
 
     const rendererByField: Record<string, any> = {
@@ -490,15 +517,15 @@ function buildColumns(parameter: ParameterName, rows: Record<string, any>[]): Gr
 
   const ordered = [
     ...preferred.filter((k) => allKeys.has(k)),
-    ...[...allKeys].filter((k) => !preferred.includes(k) && !metaKeys.has(k)),
+    ...[...allKeys].filter((k) => !preferred.includes(k) && !metaKeys.has(k) && !hiddenGridKeys.has(k)),
   ];
 
   return ordered.map((key) => createBaseColumn(key));
 }
 
-function flattenRows(parameter: ParameterName, payloadRows: ParameterRowsResponse['rows']): Record<string, any>[] {
+function flattenRows(parameter: ParameterName, payloadRows: CatalogSpecRow[]): Record<string, any>[] {
   return payloadRows.map((item) => {
-    const row = { ...(item.row ?? {}) } as Record<string, any>;
+    const row = { ...(item.payload ?? {}) } as Record<string, any>;
 
     if (parameter === 'spurious') {
       const hasSpecification = !(row.specification === null || row.specification === undefined || row.specification === '');
@@ -511,16 +538,87 @@ function flattenRows(parameter: ParameterName, payloadRows: ParameterRowsRespons
     }
 
     return {
-      transmitter_code: item.transmitter_code,
-      transmitter_name: item.transmitter_name,
-      modulation_type: item.modulation_type,
+      row_id: item.id,
+      system_kind: item.system_kind,
+      system_code: item.system_code,
+      parameter_type: item.parameter_type,
+      port_id: item.port_id,
+      frequency_id: item.frequency_id,
+      sort_order: item.sort_order,
+      transmitter_code: item.system_code,
+      transmitter_name: item.system_code,
+      modulation_type: '',
+      code: item.system_code,
+      port: item.port_name,
+      frequency_label: item.frequency_label,
+      frequency: item.frequency_hz,
       ...row,
     };
   });
 }
 
+function buildReceiverCommandThresholdRows(existingRows: Record<string, any>[], receivers: any[], portsByCode: Record<string, any[]>, frequenciesByCode: Record<string, any[]>): Record<string, any>[] {
+  const existingMap = new Map<string, Record<string, any>>();
+  for (const row of existingRows) {
+    const key = `${String(row.code ?? '')}|${String(row.port ?? '')}|${String(row.frequency_label ?? '')}|${String(row.frequency ?? '')}`;
+    existingMap.set(key, row);
+  }
+
+  const out: Record<string, any>[] = [];
+
+  for (const receiver of receivers) {
+    const code = String(receiver?.code ?? '').trim();
+    if (!code) continue;
+
+    const ports = portsByCode[code] ?? [];
+    const frequencies = frequenciesByCode[code] ?? [];
+
+    for (const port of ports) {
+      const portId = Number(port?.port_id ?? 0);
+      const portName = String(port?.port_name ?? '').trim();
+      if (!portId || !portName) continue;
+
+      for (const frequency of frequencies) {
+        const frequencyId = Number(frequency?.frequency_id ?? 0);
+        const frequencyLabel = String(frequency?.frequency_label ?? '').trim();
+        const frequencyHz = String(frequency?.frequency_hz ?? '').trim();
+        if (!frequencyId || !frequencyLabel) continue;
+
+        const key = `${code}|${portName}|${frequencyLabel}|${frequencyHz}`;
+        const existing = existingMap.get(key);
+
+        out.push({
+          row_id: existing?.row_id,
+          system_kind: 'receiver',
+          system_code: code,
+          parameter_type: 'command_threshold',
+          port_id: portId,
+          frequency_id: frequencyId,
+          sort_order: existing?.sort_order ?? 0,
+          transmitter_code: code,
+          transmitter_name: code,
+          modulation_type: 'PSK_FM',
+          code,
+          port: portName,
+          frequency_label: frequencyLabel,
+          frequency: frequencyHz,
+          specification: existing?.specification ?? null,
+          tolerance: existing?.tolerance ?? 0.5,
+          fbt: existing?.fbt ?? null,
+          fbt_hot: existing?.fbt_hot ?? null,
+          fbt_cold: existing?.fbt_cold ?? null,
+        });
+      }
+    }
+  }
+
+  return out;
+}
+
 async function loadParameter(parameter: ParameterName) {
-  const res = await api.getParameterRows(parameter);
+  const res = parameter === 'command_threshold'
+    ? await api.getSystemCatalogReceiverSpecRows(parameter)
+    : await api.getSystemCatalogTransmitterSpecRows(parameter);
   if (res.error.value) {
     toast.add({
       severity: 'error',
@@ -531,8 +629,27 @@ async function loadParameter(parameter: ParameterName) {
     return;
   }
 
-  const data = res.data.value as ParameterRowsResponse;
-  const rows = flattenRows(parameter, data.rows ?? []);
+  let rows = flattenRows(parameter, (res.data.value as CatalogSpecRow[]) ?? []);
+
+  if (parameter === 'command_threshold') {
+    const receiversRes = await api.getReceivers();
+    const receivers = Array.isArray(receiversRes.data.value) ? (receiversRes.data.value as any[]) : [];
+    const portsByCode: Record<string, any[]> = {};
+    const frequenciesByCode: Record<string, any[]> = {};
+
+    await Promise.all(receivers.map(async (receiver) => {
+      const code = String(receiver?.code ?? '').trim();
+      if (!code) return;
+      const [portsRes, frequenciesRes] = await Promise.all([
+        api.getSystemCatalogSystemPorts('receiver', code),
+        api.getSystemCatalogSystemFrequencies('receiver', code),
+      ]);
+      portsByCode[code] = Array.isArray(portsRes.data.value) ? (portsRes.data.value as any[]) : [];
+      frequenciesByCode[code] = Array.isArray(frequenciesRes.data.value) ? (frequenciesRes.data.value as any[]) : [];
+    }));
+
+    rows = buildReceiverCommandThresholdRows(rows, receivers, portsByCode, frequenciesByCode);
+  }
 
   tableRows[parameter] = rows;
   columnDefsByParameter[parameter] = buildColumns(parameter, rows);
@@ -551,21 +668,36 @@ async function saveParameter(parameter: ParameterName) {
       if (n.data) gridRows.push(n.data as Record<string, any>);
     });
 
-    const payload = {
-      rows: gridRows.map((r) => {
-        const row: Record<string, any> = {};
-        Object.keys(r).forEach((k) => {
-          if (!metaKeys.has(k)) row[k] = r[k];
-        });
-        return {
-          transmitter_code: String(r.transmitter_code ?? ''),
-          row,
-        };
-      }).filter((r) => r.transmitter_code !== ''),
-    };
+    const rowsToSave = gridRows.filter((r) => String(r.transmitter_code ?? '').trim() !== '');
 
-    const res = await api.saveParameterRows(parameter, payload);
-    if (res.error.value) {
+    const saveResults = await Promise.all(
+      rowsToSave.map(async (r, index) => {
+        const payload: Record<string, any> = {};
+        Object.keys(r).forEach((k) => {
+          if (!metaKeys.has(k) && !structuralKeys.has(k)) payload[k] = r[k];
+        });
+
+        if (parameter === 'command_threshold') {
+          return api.upsertSystemCatalogReceiverSpecRow(String(r.transmitter_code), {
+            parameter_type: parameter,
+            port_id: Number(r.port_id),
+            frequency_id: Number(r.frequency_id),
+            payload,
+            sort_order: index,
+          });
+        }
+
+        return api.upsertSystemCatalogTransmitterSpecRow(String(r.transmitter_code), {
+          parameter_type: parameter,
+          port_id: Number(r.port_id),
+          frequency_id: Number(r.frequency_id),
+          payload,
+          sort_order: index,
+        });
+      }),
+    );
+
+    if (saveResults.some((result) => Boolean(result.error.value))) {
       toast.add({
         severity: 'error',
         summary: 'Save Failed',
@@ -575,11 +707,10 @@ async function saveParameter(parameter: ParameterName) {
       return;
     }
 
-    const response = res.data.value as any;
     toast.add({
       severity: 'success',
       summary: 'Saved',
-      detail: `${sectionTitles[parameter]} updated (${response?.updated_rows ?? 0} rows).`,
+      detail: `${sectionTitles[parameter]} updated (${rowsToSave.length} rows).`,
       life: 3000,
     });
 

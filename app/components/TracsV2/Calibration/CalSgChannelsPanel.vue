@@ -104,7 +104,7 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { ModuleRegistry } from 'ag-grid-community';
 import { AllEnterpriseModule } from 'ag-grid-enterprise';
 import {
@@ -304,6 +304,7 @@ const sampleDefaultColDef: ColDef = {
 function onGridReady(event: GridReadyEvent) {
   gridApi.value = event.api;
   onSelectionChanged();
+  void selectUncalibratedRowsByDefault();
 }
 
 function onSampleGridReady(event: GridReadyEvent) {
@@ -325,6 +326,25 @@ function onSelectionChanged() {
     .getSelectedNodes()
     .filter((node) => !node.group && !!node.data)
     .length;
+}
+
+function isCompletedCalibrationRow(row: CalSgChannelRow): boolean {
+  const frequency = normalizeFrequency(row.frequency);
+  return frequency !== '' && completedFrequencySet.value.has(frequency);
+}
+
+async function selectUncalibratedRowsByDefault() {
+  await nextTick();
+  const apiRef = gridApi.value;
+  if (!apiRef) return;
+
+  apiRef.forEachNode((node) => {
+    if (node.group || !node.data) return;
+    const row = node.data as CalSgChannelRow;
+    node.setSelected(!isCompletedCalibrationRow(row));
+  });
+
+  onSelectionChanged();
 }
 
 function collectSelectedChannels(): CalibrationChannel[] {
@@ -398,7 +418,7 @@ function attachRunSnapshot(snapshot: CalibrationRunSnapshot) {
     : ['Ready. Select channels and click Start Cal.'];
   samples.value = snapshot.samples ?? [];
   showPromptDialog.value = snapshot.state === 'awaiting_operator' && !!snapshot.prompt_message;
-  promptMessage.value = snapshot.prompt_message || promptMessage.value;
+  promptMessage.value = snapshot.prompt_message || 'Connect Cal Power Sensor to selected cable and confirm.';
 }
 
 function setupStream(id: string) {
@@ -425,12 +445,12 @@ function setupStream(id: string) {
     if (typeof payload?.state === 'string') {
       isRunning.value = ['created', 'awaiting_operator', 'running', 'aborting'].includes(payload.state);
       emit('update:isRunning', isRunning.value);
-      showPromptDialog.value = payload.state === 'awaiting_operator';
+      showPromptDialog.value = payload.state === 'awaiting_operator' && !!payload?.prompt_message;
       if (['completed', 'failed', 'aborted'].includes(payload.state)) {
         showPromptDialog.value = false;
       }
     }
-    if (typeof payload?.prompt_message === 'string') {
+    if (typeof payload?.prompt_message === 'string' && payload.prompt_message.trim() !== '') {
       promptMessage.value = payload.prompt_message;
     }
   });
@@ -474,6 +494,8 @@ function setupStream(id: string) {
       eventSource.close();
       eventSource = null;
     }
+    void load();
+    void loadCalibrationDataForCalId();
   });
 
   eventSource.onerror = () => {};
@@ -578,6 +600,7 @@ async function loadCompletedRowsForCalId() {
   if (calId === '') {
     completedFrequencySet.value = new Set();
     gridApi.value?.redrawRows();
+    await selectUncalibratedRowsByDefault();
     return;
   }
 
@@ -585,12 +608,14 @@ async function loadCompletedRowsForCalId() {
   if (res.error.value || !res.data.value) {
     completedFrequencySet.value = new Set();
     gridApi.value?.redrawRows();
+    await selectUncalibratedRowsByDefault();
     return;
   }
 
   const payload = res.data.value as CalSgCompletedFrequenciesResponse;
   completedFrequencySet.value = new Set((payload.frequencies ?? []).map((f) => Number(f).toFixed(6)));
   gridApi.value?.redrawRows();
+  await selectUncalibratedRowsByDefault();
 }
 
 async function loadCalibrationDataForCalId() {
@@ -879,7 +904,6 @@ async function startCal() {
 
   const snapshot = res.data.value as CalibrationRunSnapshot;
   attachRunSnapshot(snapshot);
-  await loadCompletedRowsForCalId();
   setupStream(snapshot.run_id);
   toast.add({ severity: 'success', summary: 'Started', detail: `Calibration run ${snapshot.run_id}`, life: 2500 });
 }
@@ -896,6 +920,7 @@ async function abortCal() {
 
 async function onPromptConnected() {
   if (!runId.value) return;
+  showPromptDialog.value = false;
   const res = await runApi.respondPrompt(runId.value, { action: 'connected' });
   if (res.error.value) {
     toast.add({ severity: 'error', summary: 'Action Failed', detail: 'Unable to send operator confirmation.', life: 3000 });
@@ -906,6 +931,7 @@ async function onPromptConnected() {
 
 async function onPromptAbort() {
   if (!runId.value) return;
+  showPromptDialog.value = false;
   const res = await runApi.respondPrompt(runId.value, { action: 'abort' });
   if (res.error.value) {
     toast.add({ severity: 'error', summary: 'Action Failed', detail: 'Unable to send operator abort.', life: 3000 });

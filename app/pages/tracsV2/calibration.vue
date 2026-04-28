@@ -21,6 +21,8 @@
           :cal-id="activeCalId"
           :cal-type="activeSection"
           :include-spurious-bands="includeSpuriousBands"
+          :trigger-generate-report="generateReportTrigger"
+          @update:is-running="isCalRunning = $event"
         />
 
         <TracsV2CalibrationCalSgChannelsPanel
@@ -53,6 +55,7 @@
 
 <script setup lang="ts">
 import { initMenu } from '@/composables/tracsV2/SideNav';
+import { useCalibrationDataApi } from '@/composables/tracsV2/useCalibrationDataApi';
 import { useToast } from 'primevue/usetoast';
 
 const activeSection = ref('uplink');
@@ -62,6 +65,7 @@ const isCalRunning = ref(false);
 const generateReportTrigger = ref(0);
 
 const toast = useToast();
+const calibrationDataApi = useCalibrationDataApi();
 
 definePageMeta({
   title: 'TRACS V2 Calibration',
@@ -70,14 +74,27 @@ definePageMeta({
 initMenu(1);
 
 async function onGenerateReport() {
-  if (!['cal_sg', 'inject_cal'].includes(activeSection.value)) {
-    toast.add({ severity: 'warn', summary: 'Unsupported', detail: 'Report generation is available only for cal_sg and inject_cal.', life: 3200 });
+  if (!['cal_sg', 'inject_cal', 'downlink'].includes(activeSection.value)) {
+    toast.add({ severity: 'warn', summary: 'Unsupported', detail: 'Report generation is available only for cal_sg, inject_cal, and downlink.', life: 3200 });
     return;
   }
 
   const calId = activeCalId.value.trim();
   if (!calId) {
     toast.add({ severity: 'warn', summary: 'Cal ID Required', detail: 'Please enter Cal ID to generate report.', life: 3200 });
+    return;
+  }
+
+  if (activeSection.value === 'downlink') {
+    const res = await calibrationDataApi.generateReport({ cal_id: calId, cal_type: activeSection.value });
+    if (res.error.value) {
+      const msg = (res.error.value as any)?.data?.detail || 'Unable to generate report.';
+      toast.add({ severity: 'error', summary: 'Generate Failed', detail: String(msg), life: 4200 });
+      return;
+    }
+
+    const payload = res.data.value as import('@/composables/tracsV2/useCalibrationDataApi').CalibrationReportGenerateResponse;
+    toast.add({ severity: 'success', summary: 'Report Ready', detail: payload.message, life: 3200 });
     return;
   }
 

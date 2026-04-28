@@ -35,7 +35,7 @@
         severity="secondary"
         outlined
         :disabled="!canGenerateReport"
-        @click="emit('generateReport')"
+        @click="emit('generate-report')"
       />
     </div>
 
@@ -59,7 +59,7 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void;
   (e: 'update:calType', value: string): void;
   (e: 'update:includeSpuriousBands', value: boolean): void;
-  (e: 'generateReport'): void;
+  (e: 'generate-report'): void;
 }>();
 
 const { getCalIds } = useCalibrationDataApi();
@@ -99,7 +99,7 @@ const showSpuriousBandsCheckbox = computed(() => {
 });
 
 const canGenerateReport = computed(() => {
-  return ['cal_sg', 'inject_cal'].includes(props.calType) && props.modelValue.trim().length > 0 && !props.isRunning;
+  return ['cal_sg', 'inject_cal', 'downlink'].includes(props.calType) && props.modelValue.trim().length > 0 && !props.isRunning;
 });
 
 function onComplete(event: { query: string }) {
@@ -137,7 +137,7 @@ async function loadCalIds() {
 }
 
 async function applyDefaultCalId() {
-  if (!['cal_sg', 'inject_cal'].includes(props.calType)) return;
+  if (!['cal_sg', 'inject_cal', 'downlink'].includes(props.calType)) return;
   if (props.modelValue.trim().length > 0) return;
 
   const latest = await getLatestRun(props.calType);

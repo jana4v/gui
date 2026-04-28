@@ -48,12 +48,15 @@ import type { ColDef } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
 import {
   useTransmitterApi,
-  type OnBoardLossRowsResponse,
+  type CatalogLossRow,
 } from '@/composables/tracsV2/useTransmitterApi';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
 
 interface LossRow {
+  row_id: number;
+  port_id: number;
+  frequency_id: number;
   transmitter_code: string;
   code: string;
   port: string;
@@ -94,53 +97,55 @@ const columnDefs: ColDef[] = [
   { field: 'loss_db', headerName: 'Loss(dB)', editable: true, minWidth: 140, flex: 1 },
 ];
 
-function mapPowerRowsToLossRows(payload: OnBoardLossRowsResponse): LossRow[] {
-  return (payload.rows ?? []).map((item) => ({
-    transmitter_code: String(item.transmitter_code ?? ''),
-    code: String(item.row?.code ?? ''),
-    port: String(item.row?.port ?? ''),
-    frequency_label: String(item.row?.frequency_label ?? ''),
-    frequency: String(item.row?.frequency ?? ''),
-    loss_db: String(item.row?.loss_db ?? '0'),
+function mapPowerRowsToLossRows(payload: CatalogLossRow[]): LossRow[] {
+  return (payload ?? []).map((item) => ({
+    row_id: Number(item.id ?? 0),
+    port_id: Number(item.port_id ?? 0),
+    frequency_id: Number(item.frequency_id ?? 0),
+    transmitter_code: String(item.system_code ?? ''),
+    code: String(item.system_code ?? ''),
+    port: String(item.port_name ?? ''),
+    frequency_label: String(item.frequency_label ?? ''),
+    frequency: String(item.frequency_hz ?? ''),
+    loss_db: String(item.loss_db ?? '0'),
   }));
 }
 
 async function load() {
-  const res = await api.getOnBoardLossRows();
+  const res = await api.getSystemCatalogTransmitterLossRows();
   if (res.error.value) {
     toast.add({ severity: 'error', summary: 'Load Failed', detail: 'Unable to load transmitter rows.', life: 3500 });
     return;
   }
 
-  const payload = (res.data.value as OnBoardLossRowsResponse) ?? { unit: 'dB', rows: [] };
+  const payload = (res.data.value as CatalogLossRow[]) ?? [];
   rows.value = mapPowerRowsToLossRows(payload);
 }
 
 async function save() {
   saving.value = true;
   try {
-    const payloadRows = rows.value.map((r) => ({
-      transmitter_code: r.transmitter_code,
-      row: {
-        code: r.code,
-        port: r.port,
-        frequency_label: r.frequency_label,
-        frequency: r.frequency,
-        loss_db: r.loss_db,
-      },
-    })).filter((r) => r.transmitter_code !== '');
+    const payloadRows = rows.value.filter((r) => r.transmitter_code !== '');
 
-    const res = await api.saveOnBoardLossRows({ rows: payloadRows });
-    if (res.error.value) {
+    const saveResults = await Promise.all(
+      payloadRows.map(async (r, index) => api.upsertSystemCatalogTransmitterLossRow(r.transmitter_code, {
+        port_id: Number(r.port_id),
+        frequency_id: Number(r.frequency_id),
+        loss_db: r.loss_db === '' ? null : Number(r.loss_db),
+        payload: {},
+        sort_order: index,
+      })),
+    );
+
+    if (saveResults.some((result) => Boolean(result.error.value))) {
       toast.add({ severity: 'error', summary: 'Save Failed', detail: 'Unable to save on board losses.', life: 3500 });
       return;
     }
 
-    const summary = res.data.value as any;
     toast.add({
       severity: 'success',
       summary: 'Saved',
-      detail: `On board losses updated (${summary?.updated_rows ?? 0} rows).`,
+      detail: `On board losses updated (${payloadRows.length} rows).`,
       life: 3000,
     });
 

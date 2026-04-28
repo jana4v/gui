@@ -101,7 +101,9 @@ export interface Transmitter {
   modulation_details: PskPmDetails;
 }
 
-export type ParameterName = 'power' | 'frequency' | 'modulation_index' | 'spurious';
+export type Receiver = Transmitter;
+
+export type ParameterName = 'power' | 'frequency' | 'modulation_index' | 'spurious' | 'command_threshold';
 
 export interface ParameterRowView {
   transmitter_code: string;
@@ -128,6 +130,51 @@ export interface ParameterRowsUpdateResponse {
   unit: string;
   updated_transmitters: number;
   updated_rows: number;
+}
+
+export interface CatalogPort {
+  port_id: number;
+  system_kind: string;
+  system_code: string;
+  port_name: string;
+  sort_order: number;
+}
+
+export interface CatalogFrequency {
+  frequency_id: number;
+  system_kind: string;
+  system_code: string;
+  frequency_label: string;
+  frequency_hz: string;
+  sort_order: number;
+}
+
+export interface CatalogSpecRow {
+  id: number;
+  system_kind: string;
+  system_code: string;
+  parameter_type: ParameterName;
+  port_id: number;
+  port_name: string;
+  frequency_id: number;
+  frequency_label: string;
+  frequency_hz: string;
+  sort_order: number;
+  payload: Record<string, any>;
+}
+
+export interface CatalogLossRow {
+  id: number;
+  system_kind: string;
+  system_code: string;
+  port_id: number;
+  port_name: string;
+  frequency_id: number;
+  frequency_label: string;
+  frequency_hz: string;
+  loss_db: number | null;
+  sort_order: number;
+  payload: Record<string, any>;
 }
 
 export interface OnBoardLossRow {
@@ -316,11 +363,19 @@ const apiFetch = async (path: string, options: Record<string, any> = {}) => {
 export const useTransmitterApi = () => {
   const getTransmitters = () => apiFetch('api/v2/transmitters');
 
+  const getReceivers = () => apiFetch('api/v2/receivers');
+
   const saveTransmitter = (payload: TransmitterSavePayload) =>
     apiFetch('api/v2/transmitters', { method: 'POST', body: payload });
 
+  const saveReceiver = (payload: TransmitterSavePayload) =>
+    apiFetch('api/v2/receivers', { method: 'POST', body: payload });
+
   const deleteTransmitter = (code: string) =>
     apiFetch(`api/v2/transmitters/${code}`, { method: 'DELETE' });
+
+  const deleteReceiver = (code: string) =>
+    apiFetch(`api/v2/receivers/${encodeURIComponent(code)}`, { method: 'DELETE' });
 
   const getModulationTypes = () => apiFetch('api/v2/modulation-types');
 
@@ -341,6 +396,74 @@ export const useTransmitterApi = () => {
 
   const saveCalibrationRows = (payload: CalibrationRowsUpdateRequest) =>
     apiFetch('api/v2/transmitters/calibration', { method: 'PUT', body: payload });
+
+  // Normalized system-catalog APIs (Phase 2+)
+  const getSystemCatalogTransmitterPorts = (code: string) =>
+    apiFetch(`api/v2/system-catalog/transmitters/${encodeURIComponent(code)}/ports`);
+
+  const getSystemCatalogTransmitterFrequencies = (code: string) =>
+    apiFetch(`api/v2/system-catalog/transmitters/${encodeURIComponent(code)}/frequencies`);
+
+  const getSystemCatalogTransmitterSpecRows = (parameter: ParameterName) =>
+    apiFetch(`api/v2/system-catalog/transmitters/spec-rows?parameter_type=${encodeURIComponent(parameter)}`);
+
+  const getSystemCatalogReceiverSpecRows = (parameter: ParameterName) =>
+    apiFetch(`api/v2/system-catalog/receivers/spec-rows?parameter_type=${encodeURIComponent(parameter)}`);
+
+  const upsertSystemCatalogTransmitterSpecRow = (
+    code: string,
+    payload: {
+      parameter_type: ParameterName;
+      port_id: number;
+      frequency_id: number;
+      payload: Record<string, any>;
+      sort_order?: number;
+    },
+  ) => apiFetch(`api/v2/system-catalog/transmitters/${encodeURIComponent(code)}/spec-rows`, { method: 'POST', body: payload });
+
+  const upsertSystemCatalogReceiverSpecRow = (
+    code: string,
+    payload: {
+      parameter_type: ParameterName;
+      port_id: number;
+      frequency_id: number;
+      payload: Record<string, any>;
+      sort_order?: number;
+    },
+  ) => apiFetch(`api/v2/system-catalog/receiver/${encodeURIComponent(code)}/spec-rows`, { method: 'POST', body: payload });
+
+  const getSystemCatalogSystemPorts = (systemKind: 'transmitter' | 'receiver' | 'transponder', code: string) =>
+    apiFetch(`api/v2/system-catalog/${systemKind}/${encodeURIComponent(code)}/ports`);
+
+  const getSystemCatalogSystemFrequencies = (systemKind: 'transmitter' | 'receiver' | 'transponder', code: string) =>
+    apiFetch(`api/v2/system-catalog/${systemKind}/${encodeURIComponent(code)}/frequencies`);
+
+  const deleteSystemCatalogSpecRow = (rowId: number) =>
+    apiFetch(`api/v2/system-catalog/spec-rows/${rowId}`, { method: 'DELETE' });
+
+  const getSystemCatalogTransmitterLossRows = () =>
+    apiFetch('api/v2/system-catalog/transmitters/loss-rows');
+
+  const upsertSystemCatalogTransmitterLossRow = (
+    code: string,
+    payload: {
+      port_id: number;
+      frequency_id: number;
+      loss_db: number | null;
+      payload?: Record<string, any>;
+      sort_order?: number;
+    },
+  ) => apiFetch(`api/v2/system-catalog/transmitters/${encodeURIComponent(code)}/loss-rows`, { method: 'POST', body: payload });
+
+  const getSystemCatalogRows = (systemKind: 'transmitter' | 'receiver' | 'transponder', code: string, rowType: 'test-plan-rows' | 'profile-rows') =>
+    apiFetch(`api/v2/system-catalog/${systemKind}/${encodeURIComponent(code)}/${rowType}`);
+
+  const upsertSystemCatalogRow = (
+    systemKind: 'transmitter' | 'receiver' | 'transponder',
+    code: string,
+    rowType: 'test-plan-rows' | 'profile-rows',
+    payload: Record<string, any>,
+  ) => apiFetch(`api/v2/system-catalog/${systemKind}/${encodeURIComponent(code)}/${rowType}`, { method: 'POST', body: payload });
 
   const getInstrumentCatalog = () =>
     apiFetch('api/v2/test-systems/instruments/catalog');
@@ -395,8 +518,11 @@ export const useTransmitterApi = () => {
 
   return {
     getTransmitters,
+    getReceivers,
     saveTransmitter,
+    saveReceiver,
     deleteTransmitter,
+    deleteReceiver,
     getModulationTypes,
     getParameterRows,
     saveParameterRows,
@@ -404,6 +530,19 @@ export const useTransmitterApi = () => {
     saveOnBoardLossRows,
     getCalibrationRows,
     saveCalibrationRows,
+    getSystemCatalogTransmitterPorts,
+    getSystemCatalogTransmitterFrequencies,
+    getSystemCatalogTransmitterSpecRows,
+    getSystemCatalogReceiverSpecRows,
+    upsertSystemCatalogTransmitterSpecRow,
+    upsertSystemCatalogReceiverSpecRow,
+    getSystemCatalogSystemPorts,
+    getSystemCatalogSystemFrequencies,
+    deleteSystemCatalogSpecRow,
+    getSystemCatalogTransmitterLossRows,
+    upsertSystemCatalogTransmitterLossRow,
+    getSystemCatalogRows,
+    upsertSystemCatalogRow,
     getInstrumentCatalog,
     getProjectInstruments,
     saveProjectInstruments,

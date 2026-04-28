@@ -22,6 +22,20 @@ export interface CalSgDataRowsResponse {
   rows: CalSgDataRow[];
 }
 
+export interface DownlinkCalDataRow {
+  code: string;
+  port: string;
+  frequency: number;
+  frequency_label: string;
+  value: number;
+  datetime: string;
+}
+
+export interface DownlinkCalDataRowsResponse {
+  cal_id: string;
+  rows: DownlinkCalDataRow[];
+}
+
 export interface CalibrationReportGenerateRequest {
   cal_id: string;
   cal_type: string;
@@ -38,6 +52,12 @@ export interface CalibrationReportGenerateResponse {
   pdf_generated: boolean;
   excel_rows_appended: number;
   message: string;
+}
+
+export interface MeasureOptionsResponse {
+  test_phases: string[];
+  cal_ids: string[];
+  default_cal_id: string | null;
 }
 
 // ── Internal fetch helper (same base URL as transmitter API) ──────────────────
@@ -83,5 +103,11 @@ export const useCalibrationDataApi = () => {
   const generateReport = (payload: CalibrationReportGenerateRequest) =>
     apiFetch('api/v2/calibration/reports/generate', { method: 'POST', body: payload });
 
-  return { getCalIds, getCalSgCompletedFrequencies, getCalSgData, generateReport };
+  const getDownlinkCalData = (calId: string) =>
+    apiFetch(`api/v2/calibration/downlink-cal/data?cal_id=${encodeURIComponent(calId)}`);
+
+  const getMeasureOptions = () =>
+    apiFetch('api/v2/measure/options');
+
+  return { getCalIds, getCalSgCompletedFrequencies, getCalSgData, generateReport, getDownlinkCalData, getMeasureOptions };
 };

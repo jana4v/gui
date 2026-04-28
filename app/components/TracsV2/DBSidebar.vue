@@ -367,6 +367,7 @@ const specificationSubItems = [
   { key: 'specifications_frequency', label: 'Frequency' },
   { key: 'specifications_modulation_index', label: 'Modulation Index' },
   { key: 'specifications_spurious', label: 'Spurious' },
+  { key: 'specifications_command_threshold', label: 'Command Threshold' },
 ];
 
 const isSpecificationsActive = computed(() =>

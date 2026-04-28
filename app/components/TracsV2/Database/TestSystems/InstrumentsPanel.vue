@@ -41,6 +41,8 @@
         :rowData="rows"
         :defaultColDef="defaultColDef"
         :cellSelection="cellSelection"
+        :rowDragManaged="true"
+        :animateRows="true"
         :suppressContextMenu="true"
         :suppressMovableColumns="true"
         :undoRedoCellEditing="true"
@@ -98,7 +100,7 @@ const gridApi = shallowRef<GridApi | null>(null);
 
 const defaultColDef: ColDef = {
   resizable: true,
-  sortable: true,
+  sortable: false,
   filter: true,
   minWidth: 120,
   enableRowGroup: true,
@@ -114,6 +116,19 @@ const cellSelection = {
 };
 
 const columnDefs: ColDef[] = [
+  {
+    colId: 'drag',
+    headerName: '',
+    rowDrag: true,
+    editable: false,
+    sortable: false,
+    filter: false,
+    suppressMovable: true,
+    suppressFillHandle: true,
+    width: 56,
+    maxWidth: 56,
+    pinned: 'left',
+  },
   {
     field: 'instrument_name',
     headerName: 'Instrument Name',
@@ -216,9 +231,15 @@ async function save() {
   saving.value = true;
   try {
     const payloadRows: InstrumentRow[] = [];
-    gridApi.value?.forEachNode((n) => {
-      if (n.data) payloadRows.push(n.data as InstrumentRow);
-    });
+    if (typeof gridApi.value?.forEachNodeAfterFilterAndSort === 'function') {
+      gridApi.value.forEachNodeAfterFilterAndSort((n) => {
+        if (n.data) payloadRows.push(n.data as InstrumentRow);
+      });
+    } else {
+      gridApi.value?.forEachNode((n) => {
+        if (n.data) payloadRows.push(n.data as InstrumentRow);
+      });
+    }
 
     const res = await api.saveProjectInstruments({
       rows: payloadRows.map((row) => ({

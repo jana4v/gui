@@ -15,11 +15,8 @@
       <!-- Systems → Transmitter -->
       <TracsV2DatabaseSystemsTransmitterPanel v-if="activeSection === 'transmitter'" />
 
-      <!-- Systems → Receiver (placeholder) -->
-      <div v-else-if="activeSection === 'receiver'" class="coming-soon">
-        <i class="pi pi-server" />
-        <p>Receiver management — coming soon</p>
-      </div>
+      <!-- Systems → Receiver -->
+      <TracsV2DatabaseSystemsReceiverPanel v-else-if="activeSection === 'receiver'" />
 
       <!-- Systems → Transponder (placeholder) -->
       <div v-else-if="activeSection === 'transponder'" class="coming-soon">
@@ -139,6 +136,7 @@ const sectionLabels: Record<string, string> = {
   specifications_frequency: 'Specifications / Frequency',
   specifications_modulation_index: 'Specifications / Modulation Index',
   specifications_spurious: 'Specifications / Spurious',
+  specifications_command_threshold: 'Specifications / Command Threshold',
   test_systems_instruments: 'Test Systems / Instruments',
   test_systems_tsm_paths: 'Test Systems / TSM Paths',
   test_systems_power_meter: 'Test Systems / Power Meter',
@@ -159,11 +157,12 @@ const sectionLabels: Record<string, string> = {
   env_data: 'ENV Data',
 };
 
-const specSectionToParameter: Record<string, 'power' | 'frequency' | 'modulation_index' | 'spurious'> = {
+const specSectionToParameter: Record<string, 'power' | 'frequency' | 'modulation_index' | 'spurious' | 'command_threshold'> = {
   specifications_power: 'power',
   specifications_frequency: 'frequency',
   specifications_modulation_index: 'modulation_index',
   specifications_spurious: 'spurious',
+  specifications_command_threshold: 'command_threshold',
 };
 
 const selectedSpecParameter = computed(() => specSectionToParameter[activeSection.value]);

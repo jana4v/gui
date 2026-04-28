@@ -30,6 +30,7 @@
             : themeQuartz.withPart(colorSchemeLightCold)"
           :columnDefs="columnDefs"
           :rowData="rows"
+          :rowClassRules="rowClassRules"
           :rowSelection="rowSelection"
           :autoGroupColumnDef="autoGroupColumnDef"
           :defaultColDef="defaultColDef"
@@ -64,32 +65,32 @@
           <h3>Calibration Data</h3>
         </div>
 
-        <div class="sample-body">
-          <div v-if="samples.length === 0" class="placeholder-area">
-            <i class="pi pi-chart-line" />
-            <p>Calibration data will appear while run is active.</p>
-          </div>
-
-          <div v-else class="sample-list">
-            <div class="sample-header">
-              <span>Channel</span>
-              <span>Frequency</span>
-              <span>Value (dB)</span>
-            </div>
-            <div v-for="(s, idx) in samples" :key="`${s.timestamp}-${idx}`" class="sample-row">
-              <span>{{ s.code }}/{{ s.port }}</span>
-              <span>{{ s.frequency }}</span>
-              <span>{{ s.value }}</span>
-            </div>
-          </div>
+        <div v-if="displayRows.length === 0" class="placeholder-area">
+          <i class="pi pi-chart-line" />
+          <p>{{ isRunning ? 'Calibration progress will appear while the run is active.' : 'Calibration data will appear after a run completes.' }}</p>
         </div>
+
+        <ag-grid-vue
+          v-if="displayRows.length > 0"
+          class="sample-grid"
+          style="width: 100%; height: 100%;"
+          :theme="isDark
+            ? themeQuartz.withPart(colorSchemeDarkBlue)
+            : themeQuartz.withPart(colorSchemeLightCold)"
+          :columnDefs="calDataColumnDefs"
+          :rowData="displayRows"
+          :defaultColDef="sampleDefaultColDef"
+          :suppressContextMenu="true"
+          :suppressMovableColumns="true"
+          :domLayout="'normal'"
+        />
       </section>
     </div>
   </div>
 </template>
 
 <script lang="ts" setup>
-import { computed } from 'vue';
+import { computed, nextTick } from 'vue';
 import { ModuleRegistry } from 'ag-grid-community';
 import { AllEnterpriseModule } from 'ag-grid-enterprise';
 import {
@@ -103,6 +104,7 @@ import { useToast } from 'primevue/usetoast';
 import {
   useTransmitterApi,
   type CalibrationRowsResponse,
+  type SpuriousBandConfigRow,
   type Transmitter,
 } from '@/composables/tracsV2/useTransmitterApi';
 import {
@@ -111,6 +113,10 @@ import {
   type CalibrationRunSnapshot,
   type CalibrationSample,
 } from '@/composables/tracsV2/useCalibrationRunApi';
+import {
+  useCalibrationDataApi,
+  type DownlinkCalDataRowsResponse,
+} from '@/composables/tracsV2/useCalibrationDataApi';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
 
@@ -118,6 +124,11 @@ const props = defineProps<{
   calId: string;
   calType: string;
   includeSpuriousBands?: boolean;
+  triggerGenerateReport?: number;
+}>();
+
+const emit = defineEmits<{
+  (e: 'update:isRunning', value: boolean): void;
 }>();
 
 interface DownlinkChannelRow {
@@ -131,10 +142,14 @@ const isDark = useDark();
 const toast = useToast();
 const api = useTransmitterApi();
 const runApi = useCalibrationRunApi();
+const calibrationDataApi = useCalibrationDataApi();
 
 const rows = ref<DownlinkChannelRow[]>([]);
+const spuriousBandConfigs = ref<SpuriousBandConfigRow[]>([]);
 const statusLines = ref<string[]>(['Ready. Select channels and click Start Cal.']);
 const samples = ref<CalibrationSample[]>([]);
+const calDataRows = ref<{ code: string; port: string; frequency: number; frequency_label: string; value: number; datetime: string }[]>([]);
+const completedRowKeySet = ref<Set<string>>(new Set());
 const isRunning = ref(false);
 const progress = ref(0);
 const runId = ref<string | null>(null);
@@ -172,6 +187,56 @@ const defaultColDef: ColDef = {
 const hasSelectedChannels = computed(() => {
   return selectedChannelCount.value > 0;
 });
+
+function isSpurBandLabel(value: unknown): boolean {
+  return String(value ?? '').trim().toLowerCase() === 'spur_band';
+}
+
+const displayRows = computed(() => {
+  const includeSpurious = !!props.includeSpuriousBands;
+
+  if (isRunning.value || (calDataRows.value.length === 0 && samples.value.length > 0)) {
+    const liveRows = samples.value.map((sample) => ({
+      code: String(sample.code ?? ''),
+      port: String(sample.port ?? ''),
+      frequency: Number(sample.frequency ?? 0),
+      frequency_label: String(sample.frequency_label ?? ''),
+      value: sample.value !== undefined ? Number(sample.value) : undefined,
+      datetime: String(sample.timestamp ?? ''),
+    }));
+
+    return includeSpurious
+      ? liveRows
+      : liveRows.filter((row) => !isSpurBandLabel(row.frequency_label));
+  }
+
+  return includeSpurious
+    ? calDataRows.value
+    : calDataRows.value.filter((row) => !isSpurBandLabel(row.frequency_label));
+});
+
+const rowClassRules = {
+  'cal-completed-row': (params: any) => {
+    if (params?.node?.group || !params?.data) return false;
+    return completedRowKeySet.value.has(buildRowKey(params.data));
+  },
+};
+
+const sampleDefaultColDef: ColDef = {
+  resizable: true,
+  sortable: true,
+  filter: true,
+  minWidth: 100,
+};
+
+const calDataColumnDefs: ColDef[] = [
+  { field: 'code', headerName: 'Code', minWidth: 120, flex: 1 },
+  { field: 'port', headerName: 'Port', minWidth: 100, flex: 1 },
+  { field: 'frequency', headerName: 'Frequency (MHz)', minWidth: 150, flex: 1 },
+  { field: 'frequency_label', headerName: 'Frequency Label', minWidth: 150, flex: 1 },
+  { field: 'value', headerName: 'Value (dB)', minWidth: 120, flex: 1 },
+  { field: 'datetime', headerName: 'DateTime', minWidth: 200, flex: 1.5 },
+];
 
 const columnDefs: ColDef[] = [
   {
@@ -219,6 +284,7 @@ const columnDefs: ColDef[] = [
 function onGridReady(event: GridReadyEvent) {
   gridApi.value = event.api;
   onSelectionChanged();
+  void selectUncalibratedRowsByDefault();
 }
 
 function onSelectionChanged() {
@@ -234,6 +300,104 @@ function onSelectionChanged() {
     .length;
 }
 
+function normalizeCode(value: string) {
+  const text = String(value ?? '').trim();
+  if (text.toLowerCase().endsWith('_spurious')) {
+    return text.slice(0, -'_spurious'.length).trim();
+  }
+  if (text.toLowerCase().endsWith('_spur')) {
+    return text.slice(0, -'_spur'.length).trim();
+  }
+  return text;
+}
+
+function normalizeFrequency(value: string | number) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric.toFixed(6) : '';
+}
+
+function toNumber(value: unknown): number | null {
+  const text = String(value ?? '').trim();
+  if (text === '') return null;
+  const n = Number(text);
+  return Number.isNaN(n) ? null : n;
+}
+
+function extractOffsets(matrix: unknown): number[] {
+  const offsets: number[] = [];
+  if (!Array.isArray(matrix)) return offsets;
+  for (const row of matrix) {
+    if (!Array.isArray(row) || row.length === 0) continue;
+    const offset = toNumber(row[0]);
+    if (offset === null) continue;
+    offsets.push(offset);
+  }
+  return offsets;
+}
+
+function expandRange(startFrequency: number, stopFrequency: number, step: number): number[] {
+  const low = Math.min(startFrequency, stopFrequency);
+  const high = Math.max(startFrequency, stopFrequency);
+  const out: number[] = [];
+  let current = low;
+  while (current <= high + 1e-9) {
+    out.push(Number(current.toFixed(6)));
+    current += step;
+  }
+  const highRounded = Number(high.toFixed(6));
+  if (!out.includes(highRounded)) out.push(highRounded);
+  return out;
+}
+
+function findSpuriousSpecForBase(base: { frequency: string; frequency_label: string }, tx: Transmitter) {
+  const specs = tx?.modulation_details?.spurious_specs ?? [];
+  return specs.find((s) => {
+    return String(s?.frequency ?? '').trim() === String(base.frequency ?? '').trim()
+      && String(s?.frequency_label ?? '').trim() === String(base.frequency_label ?? '').trim();
+  });
+}
+
+function buildBandFrequencyList(profileName: string): number[] {
+  if (!profileName) return [];
+  const out: number[] = [];
+  for (const band of spuriousBandConfigs.value) {
+    if (!band?.enable) continue;
+    if (String(band.profile_name ?? '').trim() !== profileName) continue;
+    const start = toNumber(band.start_frequency);
+    const stop = toNumber(band.stop_frequency);
+    if (start === null || stop === null) continue;
+    out.push(...expandRange(start, stop, 100));
+  }
+  return out;
+}
+
+function buildRowKey(row: { code?: string; port?: string; frequency?: string | number; frequency_label?: string }) {
+  return [
+    normalizeCode(String(row.code ?? '')),
+    String(row.port ?? '').trim(),
+    normalizeFrequency(row.frequency ?? ''),
+    String(row.frequency_label ?? '').trim().toLowerCase(),
+  ].join('|');
+}
+
+function isCompletedCalibrationRow(row: DownlinkChannelRow): boolean {
+  return completedRowKeySet.value.has(buildRowKey(row));
+}
+
+async function selectUncalibratedRowsByDefault() {
+  await nextTick();
+  const apiRef = gridApi.value;
+  if (!apiRef) return;
+
+  apiRef.forEachNode((node) => {
+    if (node.group || !node.data) return;
+    const row = node.data as DownlinkChannelRow;
+    node.setSelected(!isCompletedCalibrationRow(row));
+  });
+
+  onSelectionChanged();
+}
+
 function mapRows(payload: CalibrationRowsResponse): DownlinkChannelRow[] {
   return (payload.rows ?? []).map((item) => ({
     code: String(item.row?.code ?? ''),
@@ -246,20 +410,65 @@ function mapRows(payload: CalibrationRowsResponse): DownlinkChannelRow[] {
 function mapRowsFromTransmitters(items: Transmitter[]): DownlinkChannelRow[] {
   const out: DownlinkChannelRow[] = [];
   const seen = new Set<string>();
+  const includeSpurious = !!props.includeSpuriousBands;
+
+  const upsertRow = (mapped: DownlinkChannelRow) => {
+    const key = `${mapped.code}|${mapped.port}|${mapped.frequency_label}|${mapped.frequency}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(mapped);
+    }
+  };
 
   for (const tx of items ?? []) {
     const specs = tx?.modulation_details?.power_specs ?? [];
+    const txCode = String(tx?.code ?? '').trim();
     for (const row of specs) {
+      const baseFrequency = toNumber(row?.frequency);
+      const baseLabel = String(row?.frequency_label ?? '').trim();
+      const basePort = String(row?.port ?? '').trim();
+      const baseCode = String(row?.code ?? txCode ?? '').trim();
+
       const mapped: DownlinkChannelRow = {
-        code: String(row?.code ?? tx?.code ?? ''),
+        code: baseCode,
         port: String(row?.port ?? ''),
         frequency: String(row?.frequency ?? ''),
         frequency_label: String(row?.frequency_label ?? ''),
       };
-      const key = `${mapped.code}|${mapped.port}|${mapped.frequency_label}|${mapped.frequency}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        out.push(mapped);
+
+      upsertRow(mapped);
+
+      if (!includeSpurious || baseFrequency === null || baseLabel === '' || baseCode === '') {
+        continue;
+      }
+
+      const spuriousSpec = findSpuriousSpecForBase(
+        { frequency: String(row?.frequency ?? ''), frequency_label: baseLabel },
+        tx,
+      );
+      if (!spuriousSpec) {
+        continue;
+      }
+
+      const extraFrequencies = new Set<number>();
+      for (const field of ['fbt', 'fbt_hot', 'fbt_cold'] as const) {
+        for (const offset of extractOffsets(spuriousSpec[field])) {
+          extraFrequencies.add(Number((baseFrequency + offset).toFixed(6)));
+        }
+      }
+
+      const profileName = String((spuriousSpec as any)?.profile_name ?? '').trim();
+      for (const f of buildBandFrequencyList(profileName)) {
+        extraFrequencies.add(Number(f.toFixed(6)));
+      }
+
+      for (const extra of extraFrequencies) {
+        upsertRow({
+          code: baseCode,
+          port: basePort,
+          frequency: String(Number(extra.toFixed(6))),
+          frequency_label: 'spur_band',
+        });
       }
     }
   }
@@ -330,7 +539,7 @@ function attachRunSnapshot(snapshot: CalibrationRunSnapshot) {
     : ['Ready. Select channels and click Start Cal.'];
   samples.value = snapshot.samples ?? [];
   showPromptDialog.value = snapshot.state === 'awaiting_operator' && !!snapshot.prompt_message;
-  promptMessage.value = snapshot.prompt_message || promptMessage.value;
+  promptMessage.value = snapshot.prompt_message || 'Connect Cal Power Sensor to selected cable and confirm.';
 }
 
 function setupStream(id: string) {
@@ -358,12 +567,12 @@ function setupStream(id: string) {
     if (typeof payload?.progress === 'number') progress.value = payload.progress;
     if (typeof payload?.state === 'string') {
       isRunning.value = ['created', 'awaiting_operator', 'running', 'aborting'].includes(payload.state);
-      showPromptDialog.value = payload.state === 'awaiting_operator';
+      showPromptDialog.value = payload.state === 'awaiting_operator' && !!payload?.prompt_message;
       if (['completed', 'failed', 'aborted'].includes(payload.state)) {
         showPromptDialog.value = false;
       }
     }
-    if (typeof payload?.prompt_message === 'string') {
+    if (typeof payload?.prompt_message === 'string' && payload.prompt_message.trim() !== '') {
       promptMessage.value = payload.prompt_message;
     }
   });
@@ -396,6 +605,8 @@ function setupStream(id: string) {
       eventSource.close();
       eventSource = null;
     }
+    void load();
+    void loadCalibrationDataForCalId();
   });
 
   eventSource.onerror = () => {
@@ -404,26 +615,55 @@ function setupStream(id: string) {
 }
 
 async function load() {
+  const bandRes = await api.getSpuriousBandConfigs();
+  if (!bandRes.error.value && bandRes.data.value) {
+    const payload = bandRes.data.value as { bands?: SpuriousBandConfigRow[] };
+    spuriousBandConfigs.value = payload?.bands ?? [];
+  } else {
+    spuriousBandConfigs.value = [];
+  }
+
   const res = await api.getCalibrationRows();
+  let mappedRows: DownlinkChannelRow[] = [];
   if (!res.error.value) {
     const payload = (res.data.value as CalibrationRowsResponse) ?? { unit: 'dB', rows: [] };
-    const mapped = mapRows(payload);
-    if (mapped.length > 0) {
-      rows.value = mapped;
-      pushStatus(`Loaded ${mapped.length} channel rows from calibration data.`);
-      return;
-    }
+    mappedRows = mapRows(payload);
   }
 
   const txRes = await api.getTransmitters();
   if (!txRes.error.value && Array.isArray(txRes.data.value)) {
-    const fallbackRows = mapRowsFromTransmitters(txRes.data.value as Transmitter[]);
-    rows.value = fallbackRows;
-    pushStatus(`Loaded ${fallbackRows.length} channel rows from transmitters.`);
+    const transmitterRows = mapRowsFromTransmitters(txRes.data.value as Transmitter[]);
+    const mergedRows = [...mappedRows];
+    const seen = new Set(mergedRows.map((row) => `${row.code}|${row.port}|${row.frequency_label}|${row.frequency}`));
+    for (const row of transmitterRows) {
+      const key = `${row.code}|${row.port}|${row.frequency_label}|${row.frequency}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        mergedRows.push(row);
+      }
+    }
+
+    if (mergedRows.length > 0) {
+      rows.value = mergedRows;
+      pushStatus(`Loaded ${mergedRows.length} channel rows (including transmitter expansion).`);
+    } else {
+      rows.value = [];
+      pushStatus('No channel rows found.');
+    }
+    await selectUncalibratedRowsByDefault();
+    return;
+  }
+
+  if (mappedRows.length > 0) {
+    rows.value = mappedRows;
+    pushStatus(`Loaded ${mappedRows.length} channel rows from calibration data.`);
+    await selectUncalibratedRowsByDefault();
     return;
   }
 
   rows.value = [];
+  completedRowKeySet.value = new Set();
+  gridApi.value?.redrawRows();
   pushStatus('No channel rows found.');
 }
 
@@ -453,6 +693,8 @@ async function startCal() {
     return;
   }
 
+  calDataRows.value = [];
+  samples.value = [];
   const snapshot = res.data.value as CalibrationRunSnapshot;
   attachRunSnapshot(snapshot);
   setupStream(snapshot.run_id);
@@ -471,6 +713,7 @@ async function abortCal() {
 
 async function onPromptConnected() {
   if (!runId.value) return;
+  showPromptDialog.value = false;
   const res = await runApi.respondPrompt(runId.value, { action: 'connected' });
   if (res.error.value) {
     toast.add({ severity: 'error', summary: 'Action Failed', detail: 'Unable to send operator confirmation.', life: 3000 });
@@ -481,6 +724,7 @@ async function onPromptConnected() {
 
 async function onPromptAbort() {
   if (!runId.value) return;
+  showPromptDialog.value = false;
   const res = await runApi.respondPrompt(runId.value, { action: 'abort' });
   if (res.error.value) {
     toast.add({ severity: 'error', summary: 'Action Failed', detail: 'Unable to send operator abort.', life: 3000 });
@@ -495,8 +739,67 @@ function pushStatus(message: string) {
   statusLines.value = [`[${stamp}] ${message}`, ...statusLines.value].slice(0, 200);
 }
 
+async function loadCalibrationDataForCalId() {
+  const calId = String(props.calId ?? '').trim();
+  if (calId === '') {
+    calDataRows.value = [];
+    completedRowKeySet.value = new Set();
+    gridApi.value?.redrawRows();
+    return;
+  }
+
+  const res = await calibrationDataApi.getDownlinkCalData(calId);
+  if (res.error.value || !res.data.value) {
+    calDataRows.value = [];
+    completedRowKeySet.value = new Set();
+    gridApi.value?.redrawRows();
+    return;
+  }
+
+  const payload = res.data.value as DownlinkCalDataRowsResponse;
+  calDataRows.value = (payload.rows ?? []).map((row) => ({
+    code: row.code,
+    port: row.port,
+    frequency: row.frequency,
+    frequency_label: row.frequency_label ?? '',
+    value: row.value,
+    datetime: row.datetime,
+  }));
+  completedRowKeySet.value = new Set(calDataRows.value.map((row) => buildRowKey(row)));
+  gridApi.value?.redrawRows();
+  await selectUncalibratedRowsByDefault();
+}
+
+async function generateReport() {
+  const calId = props.calId?.trim();
+  if (!calId) {
+    pushStatus('Generate Report: Cal ID is required.');
+    toast.add({ severity: 'warn', summary: 'Cal ID Required', detail: 'Please enter/select a Cal ID to generate report.', life: 3000 });
+    return;
+  }
+
+  pushStatus(`Generating report for Cal ID: ${calId} ...`);
+  const res = await calibrationDataApi.generateReport({ cal_id: calId, cal_type: props.calType });
+
+  if (res.error.value) {
+    const msg = (res.error.value as any)?.data?.detail || 'Unable to generate report.';
+    pushStatus(`Report failed: ${msg}`);
+    toast.add({ severity: 'error', summary: 'Generate Failed', detail: String(msg), life: 4200 });
+    return;
+  }
+
+  const payload = res.data.value as import('@/composables/tracsV2/useCalibrationDataApi').CalibrationReportGenerateResponse;
+  const lines: string[] = [];
+  if (payload.pdf_generated) lines.push(`PDF: ${payload.pdf_path ?? 'saved'}`);
+  if (payload.excel_rows_appended > 0) lines.push(`Excel: ${payload.excel_rows_appended} row(s) appended`);
+  lines.forEach((l) => pushStatus(l));
+  pushStatus(`Report ready: ${payload.message}`);
+  toast.add({ severity: 'success', summary: 'Report Ready', detail: payload.message, life: 3200 });
+}
+
 onMounted(async () => {
   await load();
+  void loadCalibrationDataForCalId();
 
   const active = await runApi.getActiveRun();
   if (!active.error.value && active.data.value) {
@@ -520,6 +823,8 @@ watch(
       eventSource = null;
     }
 
+    void loadCalibrationDataForCalId();
+
     const active = await runApi.getActiveRun();
     if (!active.error.value && active.data.value) {
       const snapshot = active.data.value as CalibrationRunSnapshot;
@@ -531,6 +836,22 @@ watch(
     }
 
     resetRunUi('Ready. Select channels and click Start Cal.');
+  }
+);
+
+watch(
+  () => props.includeSpuriousBands,
+  async () => {
+    await load();
+  }
+);
+
+watch(
+  () => props.triggerGenerateReport,
+  (val, old) => {
+    if (val !== undefined && val !== old && val > 0) {
+      void generateReport();
+    }
   }
 );
 
@@ -671,39 +992,19 @@ onBeforeUnmount(() => {
   justify-content: flex-start;
 }
 
-.sample-body {
+.sample-grid {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  height: 100%;
 }
 
-.sample-list {
-  padding: 0.75rem 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
+:deep(.cal-completed-row .ag-cell) {
+  background: #10361f !important;
+  color: #d1fae5 !important;
 }
 
-.sample-header {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 0.6rem;
-  padding: 0 0.55rem;
-  color: #94a3b8;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.sample-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 0.6rem;
-  padding: 0.45rem 0.55rem;
-  border: 1px solid #1e3050;
-  border-radius: 6px;
-  color: #cbd5e1;
-  font-size: 0.83rem;
+:deep(.cal-completed-row .ag-group-value) {
+  color: #d1fae5 !important;
 }
 
 .placeholder-area {
