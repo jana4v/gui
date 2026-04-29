@@ -60,6 +60,63 @@ export interface MeasureOptionsResponse {
   default_cal_id: string | null;
 }
 
+export interface MeasureTableRow {
+  code: string;
+  port: string;
+  frequency_label: string;
+  frequency: string;
+  power_selected: boolean;
+  frequency_selected: boolean;
+  modulation_index_selected: boolean;
+  spurious_selected: boolean;
+}
+
+export interface MeasureRunStartRequest {
+  test_phase: string;
+  sub_test_phase: string;
+  cal_id: string;
+  test_plan_type: string;
+  execution_mode: string;
+  remarks?: string;
+  continue_on_missing_downlink_cal?: boolean;
+  transmitter_rows: MeasureTableRow[];
+  receiver_rows: MeasureTableRow[];
+  transponder_rows: MeasureTableRow[];
+}
+
+export interface MeasureMissingChannel {
+  system_kind: 'transmitter' | 'receiver' | 'transponder';
+  code: string;
+  port: string;
+  frequency_label: string;
+  frequency: number;
+  parameter: string;
+}
+
+export interface MeasureRunResultRow {
+  system_kind: 'transmitter' | 'receiver' | 'transponder';
+  code: string;
+  port: string;
+  frequency_label: string;
+  frequency: number;
+  parameter: string;
+  measured_value: number;
+  applied_loss: number;
+  final_value: number;
+  status: string;
+  message: string;
+  timestamp: string;
+}
+
+export interface MeasureRunStartResponse {
+  message: string;
+  processed_rows: number;
+  requires_confirmation: boolean;
+  missing_downlink_channels: MeasureMissingChannel[];
+  requested_parameters: string[];
+  results: MeasureRunResultRow[];
+}
+
 // ── Internal fetch helper (same base URL as transmitter API) ──────────────────
 const BASE_URL = 'http://localhost:8001';
 
@@ -109,5 +166,16 @@ export const useCalibrationDataApi = () => {
   const getMeasureOptions = () =>
     apiFetch('api/v2/measure/options');
 
-  return { getCalIds, getCalSgCompletedFrequencies, getCalSgData, generateReport, getDownlinkCalData, getMeasureOptions };
+  const startMeasureRun = (payload: MeasureRunStartRequest) =>
+    apiFetch('api/v2/measure/runs/start', { method: 'POST', body: payload });
+
+  return {
+    getCalIds,
+    getCalSgCompletedFrequencies,
+    getCalSgData,
+    generateReport,
+    getDownlinkCalData,
+    getMeasureOptions,
+    startMeasureRun,
+  };
 };

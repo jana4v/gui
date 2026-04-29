@@ -36,6 +36,7 @@ export interface CalibrationRunStartRequest {
   cal_id: string;
   cal_type: string;
   include_spurious_bands?: boolean | null;
+  cal_sg_level?: number | null;
   channels: CalibrationChannel[];
 }
 

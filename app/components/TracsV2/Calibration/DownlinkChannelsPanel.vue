@@ -45,6 +45,18 @@
         />
 
         <div class="panel-footer">
+          <div class="cal-sg-level-input">
+            <label for="downlink-cal-sg-level">Cal SG Level (dBm)</label>
+            <InputNumber
+              id="downlink-cal-sg-level"
+              v-model="calSgLevel"
+              :minFractionDigits="1"
+              :maxFractionDigits="1"
+              :step="0.1"
+              :disabled="isRunning"
+              inputClass="cal-sg-level-field"
+            />
+          </div>
           <Button label="Start Cal" class="action-btn" :disabled="isRunning || !props.calId || !hasSelectedChannels" @click="startCal" />
           <Button label="Abort" class="action-btn" severity="danger" outlined :disabled="!isRunning" @click="abortCal" />
         </div>
@@ -156,6 +168,7 @@ const runId = ref<string | null>(null);
 const showPromptDialog = ref(false);
 const promptMessage = ref('Connect Cal Power Sensor to selected cable and confirm.');
 const selectedChannelCount = ref(0);
+const calSgLevel = ref<number>(10.0);
 
 const gridApi = shallowRef<GridApi | null>(null);
 let eventSource: EventSource | null = null;
@@ -684,6 +697,7 @@ async function startCal() {
     cal_id: calId,
     cal_type: props.calType,
     include_spurious_bands: props.includeSpuriousBands ?? null,
+    cal_sg_level: Number(calSgLevel.value ?? 10.0),
     channels,
   });
 
@@ -934,9 +948,27 @@ onBeforeUnmount(() => {
 .panel-footer {
   display: flex;
   justify-content: flex-end;
+  align-items: flex-end;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
   border-top: 1px solid #1e3050;
+}
+
+.cal-sg-level-input {
+  margin-right: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.cal-sg-level-input label {
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+:deep(.cal-sg-level-field) {
+  width: 7.5rem;
 }
 
 .action-btn {

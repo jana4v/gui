@@ -66,13 +66,16 @@
             <TabPanel value="transmitter">
               <ag-grid-vue
                 class="measure-grid"
-                style="width: 100%; height: 360px;"
+                style="width: 100%; height: 500px;"
                 :theme="isDark
                   ? themeQuartz.withPart(colorSchemeDarkBlue)
                   : themeQuartz.withPart(colorSchemeLightCold)"
                 :columnDefs="transmitterColumnDefs"
                 :rowData="transmitterRows"
                 :defaultColDef="defaultColDef"
+                :rowGroupPanelShow="'always'"
+                :enableRangeSelection="true"
+                :cellSelection="true"
                 :suppressContextMenu="true"
                 :suppressMovableColumns="true"
               />
@@ -115,7 +118,7 @@
 
         <ag-grid-vue
           class="live-results-grid"
-          style="width: 100%; height: 100%;"
+                style="width: 100%; height: 500px;"
           :theme="isDark
             ? themeQuartz.withPart(colorSchemeDarkBlue)
             : themeQuartz.withPart(colorSchemeLightCold)"
@@ -127,6 +130,21 @@
         />
       </section>
     </div>
+
+    <Dialog v-model:visible="showMissingDownlinkDialog" modal :closable="false" header="Downlink Cal Missing" :style="{ width: '40rem' }">
+      <p class="dialog-text">
+        Downlink cal not present for selected channel(s). Continue will skip these channels and proceed.
+      </p>
+      <div class="dialog-list">
+        <div v-for="(item, idx) in missingDownlinkChannels" :key="idx" class="dialog-row">
+          {{ item.code || '-' }} / {{ item.port || '-' }} / {{ item.frequency_label || '-' }} / {{ item.frequency }} MHz
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Abort" severity="danger" outlined @click="abortMissingDownlink" />
+        <Button label="Continue" @click="continueMissingDownlink" />
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -144,6 +162,10 @@ import { AgGridVue } from 'ag-grid-vue3';
 import { initMenu } from '@/composables/tracsV2/SideNav';
 import {
   useCalibrationDataApi,
+  type MeasureRunStartRequest,
+  type MeasureMissingChannel,
+  type MeasureRunStartResponse,
+  type MeasureTableRow,
   type MeasureOptionsResponse,
 } from '@/composables/tracsV2/useCalibrationDataApi';
 import { useTransmitterApi, type Transmitter } from '@/composables/tracsV2/useTransmitterApi';
@@ -199,12 +221,18 @@ const statusLines = ref<string[]>(['Ready. Configure selections and click Start.
 const liveResults = ref<LiveResultRow[]>([]);
 
 const transmitters = ref<Transmitter[]>([]);
+const receiverRows = ref<MeasureRow[]>([]);
+const transponderRows = ref<MeasureRow[]>([]);
+const showMissingDownlinkDialog = ref(false);
+const missingDownlinkChannels = ref<MeasureMissingChannel[]>([]);
+const pendingMeasurePayload = ref<MeasureRunStartRequest | null>(null);
 
 const defaultColDef: ColDef = {
   resizable: true,
   sortable: true,
   filter: true,
   minWidth: 110,
+  enableRowGroup: true,
 };
 
 const transmitterColumnDefs: ColDef[] = [
@@ -233,6 +261,7 @@ function buildCheckboxCol(field: keyof MeasureRow, headerName: string, applicabl
     headerName,
     minWidth: 130,
     flex: 1,
+    enableFillHandle: true,
     cellRenderer: 'agCheckboxCellRenderer',
     cellEditor: 'agCheckboxCellEditor',
     editable: (params) => Boolean(params.data?.[applicableField]),
@@ -352,11 +381,113 @@ function pushLive(result: string) {
   liveResults.value = [row, ...liveResults.value].slice(0, 200);
 }
 
-function startExecution() {
+function toApiRow(row: MeasureRow): MeasureTableRow {
+  return {
+    code: String(row.code ?? '').trim(),
+    port: String(row.port ?? '').trim(),
+    frequency_label: String(row.frequency_label ?? '').trim(),
+    frequency: String(row.frequency ?? '').trim(),
+    power_selected: Boolean(row.power_selected),
+    frequency_selected: Boolean(row.frequency_selected),
+    modulation_index_selected: Boolean(row.modulation_index_selected),
+    spurious_selected: Boolean(row.spurious_selected),
+  };
+}
+
+async function runMeasureExecution(payload: MeasureRunStartRequest) {
+  const res = await calibrationApi.startMeasureRun(payload);
+  if (res.error.value || !res.data.value) {
+    isRunning.value = false;
+    progress.value = 0;
+    pushStatus('Measure execution failed to start.');
+    return;
+  }
+
+  const response = res.data.value as MeasureRunStartResponse;
+  if (response.requires_confirmation && Array.isArray(response.missing_downlink_channels) && response.missing_downlink_channels.length > 0) {
+    pendingMeasurePayload.value = payload;
+    missingDownlinkChannels.value = response.missing_downlink_channels;
+    showMissingDownlinkDialog.value = true;
+    isRunning.value = false;
+    progress.value = 0;
+    pushStatus('Downlink cal missing for selected channel(s). Awaiting user decision.');
+    return;
+  }
+
+  const rows = Array.isArray(response.results) ? response.results : [];
+  progress.value = 100;
+  isRunning.value = false;
+
+  for (const row of rows) {
+    pushStatus(row.message);
+    liveResults.value = [
+      {
+        time: new Date(row.timestamp).toLocaleTimeString(),
+        code: row.code,
+        port: row.port,
+        frequency: String(row.frequency),
+        result: `${row.parameter.toUpperCase()}: ${row.final_value.toFixed(1)} dBm (${row.status})`,
+      },
+      ...liveResults.value,
+    ].slice(0, 200);
+  }
+
+  if (rows.length === 0) {
+    pushLive('No selected parameter rows to execute');
+  }
+}
+
+async function startExecution() {
+  if (isRunning.value) return;
+  const calId = String(selectedCalId.value ?? '').trim();
+  if (calId === '') {
+    pushStatus('Select Cal ID before starting execution.');
+    return;
+  }
+
   isRunning.value = true;
-  progress.value = Math.min(100, progress.value + 8);
+  progress.value = 5;
   pushStatus(`Execution started in ${executionMode.value === 'testplan' ? 'TestPlan' : 'Manual'} mode.`);
-  pushLive('Execution started');
+
+  const payload: MeasureRunStartRequest = {
+    test_phase: String(selectedTestPhase.value ?? '').trim(),
+    sub_test_phase: String(selectedSubTestPhase.value ?? '').trim(),
+    cal_id: calId,
+    test_plan_type: String(selectedTestPlanType.value ?? '').trim(),
+    execution_mode: executionMode.value,
+    remarks: String(remarks.value ?? '').trim(),
+    continue_on_missing_downlink_cal: false,
+    transmitter_rows: transmitterRows.value.map(toApiRow),
+    receiver_rows: receiverRows.value.map(toApiRow),
+    transponder_rows: transponderRows.value.map(toApiRow),
+  };
+
+  await runMeasureExecution(payload);
+}
+
+function abortMissingDownlink() {
+  showMissingDownlinkDialog.value = false;
+  pendingMeasurePayload.value = null;
+  missingDownlinkChannels.value = [];
+  isRunning.value = false;
+  progress.value = 0;
+  pushStatus('Execution aborted by user due to missing downlink cal channels.');
+}
+
+async function continueMissingDownlink() {
+  const payload = pendingMeasurePayload.value;
+  showMissingDownlinkDialog.value = false;
+  missingDownlinkChannels.value = [];
+  pendingMeasurePayload.value = null;
+  if (!payload) return;
+
+  isRunning.value = true;
+  progress.value = 5;
+  pushStatus('Continuing execution by skipping channels with missing downlink cal.');
+  await runMeasureExecution({
+    ...payload,
+    continue_on_missing_downlink_cal: true,
+  });
 }
 
 function pauseExecution() {
