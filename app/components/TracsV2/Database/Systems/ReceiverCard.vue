@@ -174,8 +174,13 @@ async function handleSave() {
 
 async function handleDelete() {
   if (isNew.value) return;
-  const success = await store.remove(props.receiver!.code);
-  if (success) emit('deleted');
+  const rx = props.receiver!;
+  const label = rx.name ? `${rx.name} (${rx.code})` : rx.code;
+  const { confirmCriticalDelete } = useConfirmation();
+  confirmCriticalDelete('Receiver', label, async () => {
+    const success = await store.remove(rx.code);
+    if (success) emit('deleted');
+  });
 }
 </script>
 

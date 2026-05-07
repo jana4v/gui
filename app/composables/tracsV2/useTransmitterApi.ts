@@ -62,9 +62,31 @@ export interface TestProfileSpuriousRow {
   port: string;
   frequency_label: string;
   frequency: string;
-  profile_name: string;
-  spurious_search_bands: (string | number)[][];
-  enable: boolean;
+  inband: boolean;
+  spurband: boolean;
+}
+
+export interface TestProfileSpuriousRowView {
+  transmitter_code: string;
+  transmitter_name?: string | null;
+  modulation_type: string;
+  row: TestProfileSpuriousRow;
+}
+
+export interface TestProfileSpuriousRowsResponse {
+  rows: TestProfileSpuriousRowView[];
+}
+
+export interface TestProfileSpuriousRowsUpdateRequest {
+  rows: Array<{
+    transmitter_code: string;
+    row: TestProfileSpuriousRow;
+  }>;
+}
+
+export interface TestProfileSpuriousRowsUpdateResponse {
+  updated_transmitters: number;
+  updated_rows: number;
 }
 
 export interface SpuriousBandConfigRow {
@@ -204,6 +226,20 @@ export interface OnBoardLossRowsUpdateRequest {
   }>;
 }
 
+export interface OnboardLossItem {
+  id?: number;
+  source_type: string;
+  code: string;
+  port: string;
+  frequency: string;
+  freq_label: string;
+  loss_db: number | null;
+}
+
+export interface OnboardLossBulkSave {
+  rows: OnboardLossItem[];
+}
+
 export interface OnBoardLossRowsUpdateResponse {
   unit: string;
   updated_transmitters: number;
@@ -218,6 +254,8 @@ export interface CalibrationLossRow {
   system_loss: string | number | null;
   fixed_pad_loss: string | number | null;
   antenna_gain: string | number | null;
+  ground_antenna_gain?: string | number | null;
+  distance?: string | number | null;
   total_loss: string | number | null;
 }
 
@@ -319,6 +357,55 @@ export interface TsmPathsSaveResponse {
   saved_rows: number;
 }
 
+export interface ProjectTransponderRow {
+  name: string;
+  code: string;
+  rx_code: string;
+  rx_port: string;
+  rx_freq: string;
+  tx_code: string;
+  tx_port: string;
+  tx_freq: string;
+}
+
+export interface ProjectTranspondersResponse {
+  rows: ProjectTransponderRow[];
+}
+
+export interface ProjectTranspondersSaveRequest {
+  rows: ProjectTransponderRow[];
+}
+
+export interface ProjectTranspondersSaveResponse {
+  saved_rows: number;
+}
+
+export interface RangingTone {
+  id: number;
+  tone_khz: string;
+  sort_order: number;
+}
+
+export interface RangingThresholdRow {
+  id?: number;
+  transponder_code: string;
+  tone_id: number;
+  tone_khz?: string;
+  uplink: string;
+  downlink: string;
+  max_input_power: number | null;
+  specification: number | null;
+  tolerance: number | null;
+  fbt: (string | number)[][] | null;
+  fbt_hot: (string | number)[][] | null;
+  fbt_cold: (string | number)[][] | null;
+  sort_order?: number;
+}
+
+export interface RangingThresholdRowsBulkSave {
+  rows: RangingThresholdRow[];
+}
+
 export interface EnvDataRow {
   parameter: string;
   value: string;
@@ -362,6 +449,8 @@ const apiFetch = async (path: string, options: Record<string, any> = {}) => {
 
 export const useTransmitterApi = () => {
   const getTransmitters = () => apiFetch('api/v2/transmitters');
+
+  const getTestPlanTypes = () => apiFetch('api/v2/test-plan-types');
 
   const getReceivers = () => apiFetch('api/v2/receivers');
 
@@ -492,11 +581,38 @@ export const useTransmitterApi = () => {
   const saveProjectTsmPaths = (payload: TsmPathsSaveRequest) =>
     apiFetch('api/v2/test-systems/project-tsm-paths', { method: 'PUT', body: payload });
 
+  const getProjectTransponders = () =>
+    apiFetch('api/v2/test-systems/project-transponders');
+
+  const saveProjectTransponders = (payload: ProjectTranspondersSaveRequest) =>
+    apiFetch('api/v2/test-systems/project-transponders', { method: 'PUT', body: payload });
+
+  const getRangingTones = () =>
+    apiFetch('api/v2/system-catalog/ranging-tones');
+
+  const getRangingThresholdRows = () =>
+    apiFetch('api/v2/system-catalog/ranging-threshold-rows');
+
+  const saveRangingThresholdRows = (payload: RangingThresholdRowsBulkSave) =>
+    apiFetch('api/v2/system-catalog/ranging-threshold-rows', { method: 'PUT', body: payload });
+
+  const getOnboardLosses = (sourceType: 'transmitter' | 'receiver') =>
+    apiFetch(`api/v2/system-catalog/onboard-losses?source_type=${sourceType}`);
+
+  const saveOnboardLosses = (payload: OnboardLossBulkSave) =>
+    apiFetch('api/v2/system-catalog/onboard-losses', { method: 'PUT', body: payload });
+
   const getSpuriousBandConfigs = () =>
     apiFetch('api/v2/spurious-bands');
 
   const saveSpuriousBandConfigs = (bands: SpuriousBandConfigRow[]) =>
     apiFetch('api/v2/spurious-bands', { method: 'PUT', body: { bands } });
+
+  const getTestProfileSpuriousRows = () =>
+    apiFetch('api/v2/transmitters/test-profile-spurious');
+
+  const saveTestProfileSpuriousRows = (payload: TestProfileSpuriousRowsUpdateRequest) =>
+    apiFetch('api/v2/transmitters/test-profile-spurious', { method: 'PUT', body: payload });
 
   const getEnvDataRows = () =>
     apiFetch('api/v2/env-data');
@@ -516,8 +632,42 @@ export const useTransmitterApi = () => {
   const selectEnvDataDirectory = () =>
     apiFetch('api/v2/env-data/select-directory');
 
+  // ── Receiver Test Profiles ────────────────────────────────────────────────
+
+  const getReceiverTestProfile = (profileType: string) =>
+    apiFetch(`api/v2/receiver-test-profiles/${encodeURIComponent(profileType)}`);
+
+  const saveReceiverTestProfile = (payload: { profile_type: string; rows: any[] }) =>
+    apiFetch('api/v2/receiver-test-profiles', { method: 'PUT', body: payload });
+
+  const getTransponderTestProfile = (profileType: string) =>
+    apiFetch(`api/v2/transponder-test-profiles/${encodeURIComponent(profileType)}`);
+
+  const saveTransponderTestProfile = (payload: { profile_type: string; rows: any[] }) =>
+    apiFetch('api/v2/transponder-test-profiles', { method: 'PUT', body: payload });
+
+  // ── Test Plan Selections (per-system-kind, per-test-plan-type) ─────────────
+
+  const getTestPlanSelections = (
+    systemKind: 'transmitter' | 'receiver' | 'transponder',
+    testPlanName: string,
+  ) =>
+    apiFetch(
+      `api/v2/test-plan/selections/${encodeURIComponent(systemKind)}/${encodeURIComponent(testPlanName)}`,
+    );
+
+  const saveTestPlanSelections = (
+    systemKind: 'transmitter' | 'receiver' | 'transponder',
+    payload: { test_plan_name: string; rows: any[] },
+  ) =>
+    apiFetch(`api/v2/test-plan/selections/${encodeURIComponent(systemKind)}`, {
+      method: 'PUT',
+      body: payload,
+    });
+
   return {
     getTransmitters,
+    getTestPlanTypes,
     getReceivers,
     saveTransmitter,
     saveReceiver,
@@ -552,13 +702,28 @@ export const useTransmitterApi = () => {
     saveProjectPowerMeters,
     getProjectTsmPaths,
     saveProjectTsmPaths,
+    getProjectTransponders,
+    saveProjectTransponders,
+    getRangingTones,
+    getRangingThresholdRows,
+    saveRangingThresholdRows,
     getSpuriousBandConfigs,
     saveSpuriousBandConfigs,
+    getTestProfileSpuriousRows,
+    saveTestProfileSpuriousRows,
     getEnvDataRows,
     saveEnvDataRows,
     createEnvDataRow,
     updateEnvDataRow,
     deleteEnvDataRow,
     selectEnvDataDirectory,
+    getReceiverTestProfile,
+    saveReceiverTestProfile,
+    getTransponderTestProfile,
+    saveTransponderTestProfile,
+    getOnboardLosses,
+    saveOnboardLosses,
+    getTestPlanSelections,
+    saveTestPlanSelections,
   };
 };

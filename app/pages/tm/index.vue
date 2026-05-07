@@ -30,9 +30,7 @@ interface TmLiveRow {
 }
 
 const colorModeStore = useColorModeStore()
-const gatewayBase = import.meta.client
-  ? `http://${window.location.host}/api/go/v1`
-  : ''
+const { apiBase: gatewayBase } = useRuntimeConfig().public
 
 const tmFilters = useTmFiltersStore()
 const subsystems = ref<string[]>([])
@@ -311,39 +309,11 @@ async function subscribeLoop(sub: Subscription) {
   }
 }
 
-async function connectNats() {
-  if (!import.meta.client)
-    return
-
-  try {
-    const wsUrl = `ws://${window.location.host}/nats`
-    natsClient = await connect({ servers: wsUrl })
-    resubscribeNats()
-  }
-  catch {
-    // keep page usable even when broker is unavailable
-    natsClient = null
-  }
-}
-
-function getNatsSubjects(chain: string) {
-  if (!chain || chain === 'UNIFIED') {
-    return {
-      delta: 'tm.tm_map',
-      full: 'tm.tm_map/full',
-    }
-  }
-  const normalized = chain.toUpperCase()
-  return {
-    delta: `tm.tm_map.${normalized}`,
-    full: `tm.tm_map/full.${normalized}`,
-  }
-}
-
 function resubscribeNats() {
   if (!natsClient)
     return
 
+  // Tear down existing subscriptions
   if (natsSubTmMap) {
     natsSubTmMap.unsubscribe()
     natsSubTmMap = null
@@ -353,27 +323,52 @@ function resubscribeNats() {
     natsSubTmMapFull = null
   }
 
-  const subjects = getNatsSubjects(selectedNatsChain.value)
-  natsSubTmMap = natsClient.subscribe(subjects.delta)
-  natsSubTmMapFull = natsClient.subscribe(subjects.full)
+  const chain = selectedNatsChain.value
+  // Backend ingest dispatcher publishes deltas to:
+  //   tm.tm_map          (unified — all chains merged)
+  //   tm.tm_map.<CHAIN>  (per-chain, e.g. tm.tm_map.TM1)
+  const subject = chain === 'UNIFIED'
+    ? 'tm.tm_map'
+    : `tm.tm_map.${chain}`
+
+  natsSubTmMap = natsClient.subscribe(subject)
   void subscribeLoop(natsSubTmMap)
-  void subscribeLoop(natsSubTmMapFull)
 }
 
-function disconnectNats() {
-  if (natsSubTmMap) {
-    natsSubTmMap.unsubscribe()
-    natsSubTmMap = null
+  async function connectNats() {
+    if (!import.meta.client)
+      return
+
+    try {
+      // In development, connect directly to NATS WS (port 4223) to avoid routing
+      // through the Nuxt dev server, which crashes Nitro on failed WS upgrades.
+      // In production, traffic goes through the reverse proxy (Kong) at /nats.
+      const natsWsUrl = import.meta.dev
+        ? 'ws://localhost:4223'
+        : `ws://${window.location.host}/nats`
+      natsClient = await connect({ servers: natsWsUrl })
+      resubscribeNats()
+    }
+    catch {
+      // keep page usable even when broker is unavailable
+      natsClient = null
+    }
   }
-  if (natsSubTmMapFull) {
-    natsSubTmMapFull.unsubscribe()
-    natsSubTmMapFull = null
+
+  function disconnectNats() {
+    if (natsSubTmMap) {
+      natsSubTmMap.unsubscribe()
+      natsSubTmMap = null
+    }
+    if (natsSubTmMapFull) {
+      natsSubTmMapFull.unsubscribe()
+      natsSubTmMapFull = null
+    }
+    if (natsClient) {
+      void natsClient.close()
+      natsClient = null
+    }
   }
-  if (natsClient) {
-    void natsClient.close()
-    natsClient = null
-  }
-}
 
 onMounted(() => {
   restoreLocalState()

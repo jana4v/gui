@@ -222,14 +222,6 @@ watch(() => props.isEditable, () => {
   });
 });
 
-// ── Watch rowData and update grid when it changes ──
-// Removed to prevent potential circular updates
-// watch(() => props.rowData, (newRows) => {
-//   if (gridApi.value && newRows.length > 0) {
-//     setRows(newRows);
-//   }
-// });
-
 function onGridReady(event: GridReadyEvent) {
   gridApi.value = event.api;
   

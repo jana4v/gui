@@ -23,7 +23,8 @@
         :columnDefs="columnDefs"
         :rowData="rows"
         :defaultColDef="defaultColDef"
-        :suppressContextMenu="true"
+        :cellSelection="cellSelection"
+        :suppressContextMenu="false"
         :suppressMovableColumns="true"
         rowGroupPanelShow="always"
         groupDisplayType="singleColumn"
@@ -42,21 +43,22 @@ import {
   colorSchemeLightCold,
   themeQuartz,
 } from 'ag-grid-community';
-import type { ColDef, GridApi, GridReadyEvent } from 'ag-grid-community';
+import type { CellSelectionOptions, ColDef, GridApi, GridReadyEvent } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
 import {
   useTransmitterApi,
-  type ParameterRowsResponse,
-  type Transmitter,
+  type TestProfileSpuriousRowsResponse,
 } from '@/composables/tracsV2/useTransmitterApi';
+import { toNumberOrNull } from '@/composables/tracsV2/utils';
+import { useUiStatePersistence } from '@/composables/tracsV2/useUiStatePersistence';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
 
 const toast = useToast();
 const isDark = useDark();
 const api = useTransmitterApi();
-
-const PROFILE_OPTIONS = ['Detailed', 'Short', 'Minimal'] as const;
+const ui = useUiStatePersistence('ui_state:tracsV2:db:testProfiles:spuriousProfile');
+ui.registerGrid('main');
 
 interface SpuriousProfileRow {
   transmitter_code: string;
@@ -64,19 +66,17 @@ interface SpuriousProfileRow {
   port: string;
   frequency_label: string;
   frequency: number | null;
-  profile_name: string;
-  enable: boolean;
-  profiles: string[];
-  specification: string | number | null;
-  tolerance: string | number | null;
-  fbt: (string | number)[][];
-  fbt_hot: (string | number)[][];
-  fbt_cold: (string | number)[][];
+  inband: boolean;
+  spurband: boolean;
 }
 
 const rows = ref<SpuriousProfileRow[]>([]);
 const saving = ref(false);
 const gridApi = shallowRef<GridApi | null>(null);
+
+const cellSelection: boolean | CellSelectionOptions = {
+  handle: { mode: 'fill', direction: 'y', suppressClearOnFillReduction: true },
+};
 
 const defaultColDef: ColDef = { resizable: true, sortable: true, filter: true, minWidth: 100, enableRowGroup: true };
 
@@ -86,32 +86,31 @@ const columnDefs: ColDef[] = [
   { field: 'frequency_label', headerName: 'Freq Label',      editable: false, minWidth: 110 },
   { field: 'frequency',       headerName: 'Frequency (MHz)', editable: false, minWidth: 140 },
   {
-    field: 'profiles',
-    headerName: 'Profile',
+    field: 'inband',
+    headerName: 'Inband',
     editable: true,
-    cellEditor: 'agRichSelectCellEditor',
-    cellEditorParams: {
-      values: [...PROFILE_OPTIONS],
-      multiSelect: true,
-      searchType: 'matchAny',
-      filterList: true,
-    },
-    valueFormatter: (params) =>
-      Array.isArray(params.value) ? params.value.join(', ') : (params.value ?? ''),
-    minWidth: 220,
-    flex: 1,
+    cellRenderer: 'agCheckboxCellRenderer',
+    cellEditor: 'agCheckboxCellEditor',
+    suppressFillHandle: false,
+    filter: false,
+    minWidth: 110,
+  },
+  {
+    field: 'spurband',
+    headerName: 'Spurband',
+    editable: true,
+    cellRenderer: 'agCheckboxCellRenderer',
+    cellEditor: 'agCheckboxCellEditor',
+    suppressFillHandle: false,
+    filter: false,
+    minWidth: 120,
   },
 ];
 
 function onGridReady(event: GridReadyEvent) {
   gridApi.value = event.api;
   event.api.sizeColumnsToFit();
-}
-
-function toNumberOrNull(value: unknown): number | null {
-  if (value === null || value === undefined || value === '') return null;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
+  ui.onGridReady('main', event);
 }
 
 function uniqueByKey(items: SpuriousProfileRow[]) {
@@ -124,94 +123,29 @@ function uniqueByKey(items: SpuriousProfileRow[]) {
   });
 }
 
-function toBands(value: unknown): (string | number)[][] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((item) => Array.isArray(item) && item.length >= 2)
-    .map((item) => [item[0] as string | number, item[1] as string | number]);
-}
-
-function parseProfiles(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.map((v) => String(v)).filter(Boolean);
-  }
-
-  if (typeof value === 'string') {
-    return value
-      .split(',')
-      .map((v) => v.trim())
-      .filter(Boolean);
-  }
-
-  return [];
-}
-
-function mapParameterRowsToProfileRows(payload: ParameterRowsResponse): SpuriousProfileRow[] {
+function mapRows(payload: TestProfileSpuriousRowsResponse): SpuriousProfileRow[] {
   return (payload.rows ?? []).map((item) => {
-    const profiles = parseProfiles(item.row?.profiles);
     return {
       transmitter_code: String(item.transmitter_code ?? ''),
       code: String(item.row?.code ?? ''),
       port: String(item.row?.port ?? ''),
       frequency_label: String(item.row?.frequency_label ?? ''),
       frequency: toNumberOrNull(item.row?.frequency),
-      profile_name: String(item.row?.profile_name ?? (profiles[0] ?? '')),
-      enable: item.row?.enable !== false,
-      profiles,
-      specification: item.row?.specification ?? null,
-      tolerance: item.row?.tolerance ?? null,
-      fbt: toBands(item.row?.fbt),
-      fbt_hot: toBands(item.row?.fbt_hot),
-      fbt_cold: toBands(item.row?.fbt_cold),
+      inband: Boolean(item.row?.inband),
+      spurband: Boolean(item.row?.spurband),
     };
   });
 }
 
-function mapTransmittersToProfileRows(list: Transmitter[]): SpuriousProfileRow[] {
-  const out: SpuriousProfileRow[] = [];
-
-  for (const tx of list) {
-    const specs = tx.modulation_details?.spurious_specs ?? [];
-    for (const row of specs) {
-      out.push({
-        transmitter_code: String(tx.code ?? ''),
-        code: String(row.code ?? ''),
-        port: String(row.port ?? ''),
-        frequency_label: String(row.frequency_label ?? ''),
-        frequency: toNumberOrNull(row.frequency),
-        profile_name: String((row as any).profile_name ?? ''),
-        enable: (row as any).enable !== false,
-        profiles: [],
-        specification: row.specification ?? null,
-        tolerance: row.tolerance ?? null,
-        fbt: toBands(row.fbt),
-        fbt_hot: toBands(row.fbt_hot),
-        fbt_cold: toBands(row.fbt_cold),
-      });
-    }
-  }
-
-  return out;
-}
-
 async function load() {
-  // Primary source: normalized spurious parameter rows endpoint.
-  const parameterRes = await api.getParameterRows('spurious');
-  if (!parameterRes.error.value && parameterRes.data.value) {
-    const payload = parameterRes.data.value as ParameterRowsResponse;
-    rows.value = uniqueByKey(mapParameterRowsToProfileRows(payload));
+  const res = await api.getTestProfileSpuriousRows();
+  if (!res.error.value && res.data.value) {
+    const payload = res.data.value as TestProfileSpuriousRowsResponse;
+    rows.value = uniqueByKey(mapRows(payload));
     return;
   }
 
-  // Fallback source: full transmitter list and local spurious_specs.
-  const txRes = await api.getTransmitters();
-  if (!txRes.error.value && txRes.data.value) {
-    const txList = txRes.data.value as Transmitter[];
-    rows.value = uniqueByKey(mapTransmittersToProfileRows(txList));
-    return;
-  }
-
-  toast.add({ severity: 'error', summary: 'Load Failed', detail: 'Unable to load applicable spurious transmitter rows.', life: 3500 });
+  toast.add({ severity: 'error', summary: 'Load Failed', detail: 'Unable to load spurious profile rows.', life: 3500 });
 }
 
 async function save() {
@@ -229,21 +163,14 @@ async function save() {
             port: String(r.port ?? ''),
             frequency_label: String(r.frequency_label ?? ''),
             frequency: r.frequency === null ? '' : String(r.frequency),
-            profile_name: String(r.profile_name ?? ''),
-            enable: r.enable !== false,
-            specification: r.specification ?? null,
-            tolerance: r.tolerance ?? -50,
-            fbt: r.fbt?.length ? r.fbt : [['', '']],
-            fbt_hot: r.fbt_hot?.length ? r.fbt_hot : [['', '']],
-            fbt_cold: r.fbt_cold?.length ? r.fbt_cold : [['', '']],
-            // Keep selected profile labels and single profile name aligned.
-            profiles: (r.profiles?.length ? [...r.profiles] : (String(r.profile_name ?? '').trim() ? [String(r.profile_name ?? '').trim()] : [])),
+            inband: Boolean(r.inband),
+            spurband: Boolean(r.spurband),
           },
         }))
         .filter((r) => r.transmitter_code !== ''),
     };
 
-    const res = await api.saveParameterRows('spurious', payload);
+    const res = await api.saveTestProfileSpuriousRows(payload);
     if (res.error.value) {
       toast.add({ severity: 'error', summary: 'Save Failed', detail: 'Unable to save spurious profile rows.', life: 3500 });
       return;
@@ -263,8 +190,9 @@ async function save() {
   }
 }
 
-onMounted(() => {
-  void load();
+onMounted(async () => {
+  await load();
+  await ui.load();
 });
 </script>
 

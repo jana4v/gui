@@ -51,9 +51,7 @@ interface UdtmBackendRow {
 }
 
 const storageKey = 'tm.udtm.rows.v2'
-const gatewayBase = import.meta.client
-  ? `http://${window.location.host}/api/go/v1`
-  : ''
+const { apiBase: gatewayBase } = useRuntimeConfig().public
 
 const colorModeStore = useColorModeStore()
 const gridApi = shallowRef<GridApi<UdtmUiRow> | null>(null)

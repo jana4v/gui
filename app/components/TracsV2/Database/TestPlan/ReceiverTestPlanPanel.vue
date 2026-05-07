@@ -2,12 +2,12 @@
   <div class="tp-panel">
     <Toast />
     <div class="tp-header">
-      <h2>Test Plan / Transmitter</h2>
+      <h2>Test Plan / Receiver</h2>
     </div>
 
     <div class="tp-section">
       <div class="tp-section-header">
-        <h3>Transmitter Test Plan</h3>
+        <h3>Receiver Test Plan</h3>
         <div class="actions">
           <Button label="Refresh" size="small" severity="secondary" @click="load" />
           <Button label="Save" size="small" severity="primary" :loading="saving" @click="save" />
@@ -48,12 +48,13 @@ import type { ColDef, ICellRendererParams } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
 import {
   useTransmitterApi,
-  type Transmitter,
+  type Receiver,
 } from '@/composables/tracsV2/useTransmitterApi';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
 
-const PM_PARAMS = ['power', 'frequency', 'modulation_index', 'spurious'];
+// Applicable parameters per receiver modulation type
+const FM_PARAMS = ['command_threshold'];
 
 interface TestPlanRow {
   test_plan_name: string;
@@ -125,15 +126,15 @@ function flattenFrequencies(freqs: unknown): Array<{ label: string; value: strin
   return out;
 }
 
-function getApplicableParameterNames(tx: Transmitter): string[] {
+function getApplicableParameterNames(rx: Receiver): string[] {
   const names = new Set<string>();
-  const m = String(tx.modulation_type ?? '').toUpperCase();
+  const m = String(rx.modulation_type ?? '').toUpperCase();
 
-  if (m === 'PSK_PM') {
-    PM_PARAMS.forEach((p) => names.add(p));
+  if (m === 'PSK_FM') {
+    FM_PARAMS.forEach((p) => names.add(p));
   }
 
-  const extra = (tx.modulation_details as any)?.test_parameters;
+  const extra = (rx.modulation_details as any)?.test_parameters;
   if (extra && typeof extra === 'object' && !Array.isArray(extra)) {
     for (const key of Object.keys(extra)) {
       const normalized = String(key).trim().toLowerCase();
@@ -207,21 +208,21 @@ const columnDefs = computed<ColDef[]>(() => {
   return [...base, ...paramsCols];
 });
 
-function buildRows(transmitters: Transmitter[]): TestPlanRow[] {
+function buildRows(receivers: Receiver[]): TestPlanRow[] {
   const out: TestPlanRow[] = [];
   const planNames = testPlanTypes.value.length > 0
     ? testPlanTypes.value
     : ['Detailed', 'Short', 'Go/No-Go'];
 
-  for (const tx of transmitters) {
-    const code = String(tx.code ?? '').trim();
+  for (const rx of receivers) {
+    const code = String(rx.code ?? '').trim();
     if (code === '') continue;
 
-    const applicable = getApplicableParameterNames(tx);
+    const applicable = getApplicableParameterNames(rx);
     const applicableSet = new Set(applicable);
 
-    const ports = flattenPorts((tx.modulation_details as any)?.ports);
-    const freqs = flattenFrequencies((tx.modulation_details as any)?.frequencies);
+    const ports = flattenPorts((rx.modulation_details as any)?.ports);
+    const freqs = flattenFrequencies((rx.modulation_details as any)?.frequencies);
 
     const safePorts = ports.length > 0 ? ports : [''];
     const safeFreqs = freqs.length > 0 ? freqs : [{ label: '', value: '' }];
@@ -234,7 +235,7 @@ function buildRows(transmitters: Transmitter[]): TestPlanRow[] {
             code,
             port,
             frequency_label: fr.label,
-            modulation_type: String(tx.modulation_type ?? ''),
+            modulation_type: String(rx.modulation_type ?? ''),
             _applicable: {},
           };
 
@@ -254,9 +255,9 @@ function buildRows(transmitters: Transmitter[]): TestPlanRow[] {
 }
 
 async function load() {
-  const [typesRes, transmittersRes] = await Promise.all([
+  const [typesRes, receiversRes] = await Promise.all([
     api.getTestPlanTypes(),
-    api.getTransmitters(),
+    api.getReceivers(),
   ]);
 
   if (typesRes.error.value) {
@@ -266,24 +267,24 @@ async function load() {
 
   testPlanTypes.value = Array.isArray(typesRes.data.value) ? typesRes.data.value as string[] : [];
 
-  if (transmittersRes.error.value) {
-    toast.add({ severity: 'error', summary: 'Load Failed', detail: 'Unable to load transmitter rows.', life: 3500 });
+  if (receiversRes.error.value) {
+    toast.add({ severity: 'error', summary: 'Load Failed', detail: 'Unable to load receiver rows.', life: 3500 });
     return;
   }
 
-  const list = (transmittersRes.data.value as Transmitter[]) ?? [];
-  const transmitters = list.filter((t) => String(t.system_type ?? '').toLowerCase().includes('transmitter'));
+  const list = (receiversRes.data.value as Receiver[]) ?? [];
+  const receivers = list.filter((r) => String(r.system_type ?? '').toLowerCase().includes('receiver'));
 
   const allParams = new Set<string>();
-  for (const tx of transmitters) {
-    getApplicableParameterNames(tx).forEach((p) => allParams.add(p));
+  for (const rx of receivers) {
+    getApplicableParameterNames(rx).forEach((p) => allParams.add(p));
   }
 
-  const knownOrder = ['power', 'frequency', 'modulation_index', 'spurious'];
+  const knownOrder = ['command_threshold'];
   const extras = [...allParams].filter((k) => !knownOrder.includes(k)).sort((a, b) => a.localeCompare(b));
   parameterColumns.value = [...knownOrder.filter((k) => allParams.has(k)), ...extras];
 
-  const built = buildRows(transmitters);
+  const built = buildRows(receivers);
   await applySavedSelections(built);
   rows.value = built;
 }
@@ -296,7 +297,7 @@ async function applySavedSelections(rs: TestPlanRow[]) {
   const plans = testPlanTypes.value;
   if (plans.length === 0) return;
   const results = await Promise.all(
-    plans.map((p) => api.getTestPlanSelections('transmitter', p)),
+    plans.map((p) => api.getTestPlanSelections('receiver', p)),
   );
   const byPlan = new Map<string, Map<string, Record<string, boolean>>>();
   plans.forEach((plan, i) => {
@@ -349,13 +350,13 @@ async function save() {
           }, {}),
         })),
       };
-      const res = await api.saveTestPlanSelections('transmitter', payload);
+      const res = await api.saveTestPlanSelections('receiver', payload);
       if (res.error.value) errors.push(plan);
     }
     if (errors.length > 0) {
       toast.add({ severity: 'error', summary: 'Save Failed', detail: `Could not save: ${errors.join(', ')}`, life: 4000 });
     } else {
-      toast.add({ severity: 'success', summary: 'Saved', detail: 'Transmitter test plan selections saved.', life: 2500 });
+      toast.add({ severity: 'success', summary: 'Saved', detail: 'Receiver test plan selections saved.', life: 2500 });
     }
   } finally {
     saving.value = false;

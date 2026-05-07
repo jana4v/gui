@@ -24,12 +24,13 @@
         :rowData="rows"
         :defaultColDef="defaultColDef"
         :cellSelection="cellSelection"
-        :suppressContextMenu="true"
+        :suppressContextMenu="false"
         :suppressMovableColumns="true"
         :undoRedoCellEditing="true"
         :undoRedoCellEditingLimit="20"
         rowGroupPanelShow="always"
         groupDisplayType="singleColumn"
+        @grid-ready="onGridReady"
       />
     </div>
   </div>
@@ -51,6 +52,7 @@ import {
   type ProjectPowerMeterRow,
   type ProjectPowerMetersResponse,
 } from '@/composables/tracsV2/useTransmitterApi';
+import { useUiStatePersistence } from '@/composables/tracsV2/useUiStatePersistence';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
 
@@ -62,6 +64,12 @@ interface PowerMeterRow {
 const toast = useToast();
 const isDark = useDark();
 const api = useTransmitterApi();
+const ui = useUiStatePersistence('ui_state:tracsV2:db:testSystems:powerMeter');
+ui.registerGrid('main');
+
+function onGridReady(event: any) {
+  ui.onGridReady('main', event);
+}
 
 const rows = ref<PowerMeterRow[]>([]);
 const saving = ref(false);
@@ -163,8 +171,9 @@ async function save() {
   }
 }
 
-onMounted(() => {
-  void load();
+onMounted(async () => {
+  await load();
+  await ui.load();
 });
 </script>
 

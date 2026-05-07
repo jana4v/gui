@@ -54,9 +54,7 @@ interface MacroRow {
 }
 
 const colorModeStore = useColorModeStore()
-const gatewayBase = import.meta.client
-  ? `http://${window.location.host}/api/go/v1`
-  : ''
+const { apiBase: gatewayBase } = useRuntimeConfig().public
 
 type SideNavKey = 'UploadTCFile' | 'UpdateTCDB' | 'DataCommandMaps' | 'Macros' | 'PLConfigBasedTC' | 'PayloadConfigBoa' | 'CfgTmToLog' | 'OnOffCommands' | 'PlTcFiles' | 'AddonCommands'
 interface SideNavItem {

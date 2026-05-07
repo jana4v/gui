@@ -2,7 +2,7 @@
   <div class="obl-panel">
     <Toast />
     <div class="obl-header">
-      <h2>On Board Losses / Transmitter</h2>
+      <h2>On Board Losses / Receiver</h2>
     </div>
 
     <div class="obl-section">
@@ -28,8 +28,6 @@
         :suppressMovableColumns="true"
         :undoRedoCellEditing="true"
         :undoRedoCellEditingLimit="20"
-        rowGroupPanelShow="always"
-        groupDisplayType="singleColumn"
         @grid-ready="onGridReady"
       />
     </div>
@@ -47,10 +45,8 @@ import {
 } from 'ag-grid-community';
 import type { ColDef } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
-import {
-  useTransmitterApi,
-  type OnboardLossItem,
-} from '@/composables/tracsV2/useTransmitterApi';
+import Button from 'primevue/button';
+import { useTransmitterApi } from '@/composables/tracsV2/useTransmitterApi';
 import { useUiStatePersistence } from '@/composables/tracsV2/useUiStatePersistence';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
@@ -68,7 +64,7 @@ interface LossRow {
 const toast = useToast();
 const isDark = useDark();
 const api = useTransmitterApi();
-const ui = useUiStatePersistence('ui_state:tracsV2:db:onboardLosses:transmitter');
+const ui = useUiStatePersistence('ui_state:tracsV2:db:onboardLosses:receiver');
 ui.registerGrid('main');
 
 function onGridReady(event: any) {
@@ -100,7 +96,12 @@ const columnDefs: ColDef[] = [
   { field: 'port', headerName: 'Port', editable: false, minWidth: 120, flex: 1 },
   { field: 'freq_label', headerName: 'Freq Label', editable: false, minWidth: 170, flex: 1.2 },
   { field: 'frequency', headerName: 'Frequency (MHz)', editable: false, minWidth: 140, flex: 1 },
-  { field: 'loss_db', headerName: 'Loss(dB)', editable: true, minWidth: 140, flex: 1,
+  {
+    field: 'loss_db',
+    headerName: 'Loss(dB)',
+    editable: true,
+    minWidth: 140,
+    flex: 1,
     valueParser: (p: any) => {
       const n = Number(p.newValue);
       return Number.isFinite(n) ? n : p.oldValue;
@@ -109,9 +110,9 @@ const columnDefs: ColDef[] = [
 ];
 
 async function load() {
-  const res: any = await api.getOnboardLosses('transmitter');
+  const res: any = await api.getOnboardLosses('receiver');
   if (res.error.value) {
-    toast.add({ severity: 'error', summary: 'Load Failed', detail: 'Unable to load transmitter on-board losses.', life: 3500 });
+    toast.add({ severity: 'error', summary: 'Load Failed', detail: 'Unable to load receiver on-board losses.', life: 3500 });
     return;
   }
   rows.value = (res.data.value ?? []) as LossRow[];
@@ -125,7 +126,7 @@ async function save() {
       toast.add({ severity: 'error', summary: 'Save Failed', detail: 'Unable to save on-board losses.', life: 3500 });
       return;
     }
-    toast.add({ severity: 'success', summary: 'Saved', detail: `On board losses updated (${currentRows.length} rows).`, life: 3000 });
+    toast.add({ severity: 'success', summary: 'Saved', detail: `On board losses updated (${rows.value.length} rows).`, life: 3000 });
     await load();
   } finally {
     saving.value = false;

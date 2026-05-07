@@ -2,8 +2,8 @@
   <div class="db-sidebar">
     <!-- Top control buttons -->
     <div class="sidebar-controls">
-      <button class="ctrl-btn" title="Add" @click="$emit('add')">+</button>
-      <button class="ctrl-btn" title="Remove" @click="$emit('remove')">−</button>
+      <button class="ctrl-btn" title="Expand all" @click="expandAll">+</button>
+      <button class="ctrl-btn" title="Collapse all" @click="collapseAll">−</button>
     </div>
 
     <!-- Menu -->
@@ -224,14 +224,6 @@
               <i class="pi pi-external-link child-icon" />
               <span>Receiver</span>
             </div>
-            <div
-              class="nav-child-item"
-              :class="{ 'child-active': activeSection === 'on_board_losses_transponder' }"
-              @click="select('on_board_losses_transponder')"
-            >
-              <i class="pi pi-external-link child-icon" />
-              <span>Transponder</span>
-            </div>
           </div>
         </transition>
       </div>
@@ -368,6 +360,7 @@ const specificationSubItems = [
   { key: 'specifications_modulation_index', label: 'Modulation Index' },
   { key: 'specifications_spurious', label: 'Spurious' },
   { key: 'specifications_command_threshold', label: 'Command Threshold' },
+  { key: 'specifications_ranging_threshold', label: 'Ranging Threshold' },
 ];
 
 const isSpecificationsActive = computed(() =>
@@ -383,7 +376,7 @@ const isTestSystemsActive = computed(() =>
 );
 
 const isOnBoardLossesActive = computed(() =>
-  ['on_board_losses_transmitter', 'on_board_losses_receiver', 'on_board_losses_transponder'].includes(props.activeSection),
+  ['on_board_losses_transmitter', 'on_board_losses_receiver'].includes(props.activeSection),
 );
 
 const isCalibrationActive = computed(() =>
@@ -402,6 +395,30 @@ const topLevelItems = [
 
 function select(section: string) {
   emit('select', section);
+}
+
+function expandAll() {
+  systemsExpanded.value = true;
+  specificationsExpanded.value = true;
+  testProfilesExpanded.value = true;
+  testSystemsExpanded.value = true;
+  onBoardLossesExpanded.value = true;
+  calibrationExpanded.value = true;
+  testPlanExpanded.value = true;
+  tpTxExpanded.value = true;
+  tpTxSpuriousExpanded.value = true;
+}
+
+function collapseAll() {
+  systemsExpanded.value = false;
+  specificationsExpanded.value = false;
+  testProfilesExpanded.value = false;
+  testSystemsExpanded.value = false;
+  onBoardLossesExpanded.value = false;
+  calibrationExpanded.value = false;
+  testPlanExpanded.value = false;
+  tpTxExpanded.value = false;
+  tpTxSpuriousExpanded.value = false;
 }
 </script>
 
@@ -604,5 +621,49 @@ function select(section: string) {
 .expand-leave-to {
   max-height: 0;
   opacity: 0;
+}
+
+/* ── Light theme overrides ──────────────────────────────────────────────── */
+html:not(.dark) .db-sidebar {
+  background-color: var(--p-surface-0);
+  border-right-color: var(--p-content-border-color);
+}
+html:not(.dark) .sidebar-controls {
+  border-bottom-color: var(--p-content-border-color);
+}
+html:not(.dark) .ctrl-btn {
+  border-color: var(--p-surface-300);
+  color: var(--p-text-muted-color);
+}
+html:not(.dark) .ctrl-btn:hover {
+  border-color: var(--p-primary-color);
+  color: var(--p-primary-color);
+}
+html:not(.dark) .nav-item,
+html:not(.dark) .nav-group-header,
+html:not(.dark) .nav-child-item,
+html:not(.dark) .nav-subchild-item,
+html:not(.dark) .nav-grandchild-item {
+  color: var(--p-text-color);
+}
+html:not(.dark) .nav-item:hover,
+html:not(.dark) .nav-group-header:hover,
+html:not(.dark) .nav-child-item:hover,
+html:not(.dark) .nav-subchild-item:hover,
+html:not(.dark) .nav-grandchild-item:hover {
+  background: var(--p-surface-100);
+  color: var(--p-text-color);
+}
+html:not(.dark) .nav-item.active,
+html:not(.dark) .nav-group-header.active,
+html:not(.dark) .nav-child-item.child-active,
+html:not(.dark) .nav-subchild-item.subchild-active,
+html:not(.dark) .nav-grandchild-item.grandchild-active {
+  background: var(--p-primary-50);
+  color: var(--p-primary-color);
+  border-left-color: var(--p-primary-color);
+}
+html:not(.dark) .nav-chevron {
+  color: var(--p-text-muted-color);
 }
 </style>

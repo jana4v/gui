@@ -25,7 +25,7 @@
         :defaultColDef="defaultColDef"
         :cellSelection="cellSelection"
         :rowSelection="rowSelection"
-        :suppressContextMenu="true"
+        :suppressContextMenu="false"
         :suppressMovableColumns="true"
         :stopEditingWhenCellsLoseFocus="false"
         :undoRedoCellEditing="true"
@@ -55,12 +55,15 @@ import {
   type InstrumentCatalogResponse,
   type TsmPathsResponse,
 } from '@/composables/tracsV2/useTransmitterApi';
+import { useUiStatePersistence } from '@/composables/tracsV2/useUiStatePersistence';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
 
 const toast = useToast();
 const isDark = useDark();
 const api = useTransmitterApi();
+const ui = useUiStatePersistence('ui_state:tracsV2:db:testSystems:tsmPaths');
+ui.registerGrid('main');
 
 interface TsmPathRow {
   code: string;
@@ -120,6 +123,7 @@ const columnDefs: ColDef[] = [
 function onGridReady(event: GridReadyEvent) {
   gridApi.value = event.api;
   event.api.sizeColumnsToFit();
+  ui.onGridReady('main', event);
 }
 
 function onSelectionChanged(event: any) {
@@ -181,8 +185,9 @@ async function save() {
   }
 }
 
-onMounted(() => {
-  void load();
+onMounted(async () => {
+  await load();
+  await ui.load();
 });
 </script>
 

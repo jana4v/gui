@@ -2,12 +2,12 @@
   <div class="tp-panel">
     <Toast />
     <div class="tp-header">
-      <h2>Test Plan / Transmitter</h2>
+      <h2>Test Plan / Transponder</h2>
     </div>
 
     <div class="tp-section">
       <div class="tp-section-header">
-        <h3>Transmitter Test Plan</h3>
+        <h3>Transponder Test Plan</h3>
         <div class="actions">
           <Button label="Refresh" size="small" severity="secondary" @click="load" />
           <Button label="Save" size="small" severity="primary" :loading="saving" @click="save" />
@@ -49,18 +49,22 @@ import { AgGridVue } from 'ag-grid-vue3';
 import {
   useTransmitterApi,
   type Transmitter,
+  type Receiver,
+  type ProjectTranspondersResponse,
+  type ProjectTransponderRow,
+  type RangingThresholdRow,
 } from '@/composables/tracsV2/useTransmitterApi';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
 
-const PM_PARAMS = ['power', 'frequency', 'modulation_index', 'spurious'];
+// Applicable parameters for a transponder when uplink is PSK_FM and downlink is PSK_PM.
+const TRANSPONDER_PARAMS = ['ranging_threshold'];
 
 interface TestPlanRow {
   test_plan_name: string;
   code: string;
-  port: string;
-  frequency_label: string;
-  modulation_type: string;
+  uplink: string;
+  downlink: string;
   _applicable: Record<string, boolean>;
   [key: string]: any;
 }
@@ -95,53 +99,6 @@ function titleCase(value: string): string {
   return value
     .replaceAll('_', ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function flattenPorts(ports: unknown): string[] {
-  if (!Array.isArray(ports)) return [];
-  const out: string[] = [];
-  const walk = (v: unknown) => {
-    if (Array.isArray(v)) {
-      v.forEach(walk);
-      return;
-    }
-    if (v === null || v === undefined) return;
-    const text = String(v).trim();
-    if (text !== '') out.push(text);
-  };
-  walk(ports);
-  return [...new Set(out)];
-}
-
-function flattenFrequencies(freqs: unknown): Array<{ label: string; value: string }> {
-  if (!Array.isArray(freqs)) return [];
-  const out: Array<{ label: string; value: string }> = [];
-  for (const row of freqs) {
-    if (!Array.isArray(row) || row.length < 1) continue;
-    const label = String(row[0] ?? '').trim();
-    const value = String(row[1] ?? '').trim();
-    if (label !== '') out.push({ label, value });
-  }
-  return out;
-}
-
-function getApplicableParameterNames(tx: Transmitter): string[] {
-  const names = new Set<string>();
-  const m = String(tx.modulation_type ?? '').toUpperCase();
-
-  if (m === 'PSK_PM') {
-    PM_PARAMS.forEach((p) => names.add(p));
-  }
-
-  const extra = (tx.modulation_details as any)?.test_parameters;
-  if (extra && typeof extra === 'object' && !Array.isArray(extra)) {
-    for (const key of Object.keys(extra)) {
-      const normalized = String(key).trim().toLowerCase();
-      if (normalized) names.add(normalized);
-    }
-  }
-
-  return [...names];
 }
 
 function checkboxRenderer(params: ICellRendererParams) {
@@ -180,16 +137,16 @@ const columnDefs = computed<ColDef[]>(() => {
         return ai - bi;
       },
     },
-    { field: 'code', headerName: 'Code', editable: false, minWidth: 130 },
-    { field: 'port', headerName: 'Port', editable: false, minWidth: 120 },
-    { field: 'frequency_label', headerName: 'Frequency Label', editable: false, minWidth: 170 },
+    { field: 'code', headerName: 'TpCode', editable: false, minWidth: 130 },
+    { field: 'uplink', headerName: 'Uplink', editable: false, minWidth: 170 },
+    { field: 'downlink', headerName: 'Downlink', editable: false, minWidth: 170 },
   ];
 
   const paramsCols: ColDef[] = parameterColumns.value.map((param) => ({
     field: param,
     headerName: titleCase(param),
     editable: true,
-    minWidth: 170,
+    minWidth: 180,
     cellRenderer: checkboxRenderer,
     valueGetter: (p) => {
       const row = p.data as TestPlanRow | undefined;
@@ -207,46 +164,70 @@ const columnDefs = computed<ColDef[]>(() => {
   return [...base, ...paramsCols];
 });
 
-function buildRows(transmitters: Transmitter[]): TestPlanRow[] {
+function buildRows(
+  rangingRows: RangingThresholdRow[],
+  projectTransponders: ProjectTransponderRow[],
+  receivers: Receiver[],
+  transmitters: Transmitter[],
+): TestPlanRow[] {
   const out: TestPlanRow[] = [];
   const planNames = testPlanTypes.value.length > 0
     ? testPlanTypes.value
     : ['Detailed', 'Short', 'Go/No-Go'];
 
-  for (const tx of transmitters) {
-    const code = String(tx.code ?? '').trim();
-    if (code === '') continue;
+  // Index project transponders by code so we can resolve rx/tx codes.
+  const tpByCode = new Map<string, ProjectTransponderRow>();
+  for (const t of projectTransponders) {
+    const c = String(t?.code ?? '').trim();
+    if (c) tpByCode.set(c, t);
+  }
 
-    const applicable = getApplicableParameterNames(tx);
-    const applicableSet = new Set(applicable);
+  // Index receivers and transmitters by code so we can read modulation_type.
+  const rxModByCode = new Map<string, string>();
+  for (const r of receivers) {
+    const c = String(r?.code ?? '').trim();
+    if (c) rxModByCode.set(c, String(r.modulation_type ?? '').toUpperCase());
+  }
+  const txModByCode = new Map<string, string>();
+  for (const t of transmitters) {
+    const c = String(t?.code ?? '').trim();
+    if (c) txModByCode.set(c, String(t.modulation_type ?? '').toUpperCase());
+  }
 
-    const ports = flattenPorts((tx.modulation_details as any)?.ports);
-    const freqs = flattenFrequencies((tx.modulation_details as any)?.frequencies);
+  // Deduplicate by (transponder_code, uplink, downlink) so the test plan rows match the measure tab.
+  const seenLeg = new Set<string>();
+  const uniqueLegs: Array<{ code: string; uplink: string; downlink: string; applicable: boolean }> = [];
+  for (const r of rangingRows) {
+    const code = String(r?.transponder_code ?? '').trim();
+    const uplink = String(r?.uplink ?? '').trim();
+    const downlink = String(r?.downlink ?? '').trim();
+    if (!code) continue;
+    const k = `${code}|${uplink}|${downlink}`;
+    if (seenLeg.has(k)) continue;
+    seenLeg.add(k);
 
-    const safePorts = ports.length > 0 ? ports : [''];
-    const safeFreqs = freqs.length > 0 ? freqs : [{ label: '', value: '' }];
+    const tp = tpByCode.get(code);
+    const rxMod = tp ? rxModByCode.get(String(tp.rx_code ?? '').trim()) ?? '' : '';
+    const txMod = tp ? txModByCode.get(String(tp.tx_code ?? '').trim()) ?? '' : '';
+    const applicable = rxMod === 'PSK_FM' && txMod === 'PSK_PM';
 
-    for (const plan of planNames) {
-      for (const port of safePorts) {
-        for (const fr of safeFreqs) {
-          const row: TestPlanRow = {
-            test_plan_name: plan,
-            code,
-            port,
-            frequency_label: fr.label,
-            modulation_type: String(tx.modulation_type ?? ''),
-            _applicable: {},
-          };
+    uniqueLegs.push({ code, uplink, downlink, applicable });
+  }
 
-          for (const param of parameterColumns.value) {
-            const isApplicable = applicableSet.has(param);
-            row._applicable[param] = isApplicable;
-            row[param] = isApplicable ? true : null;
-          }
-
-          out.push(row);
-        }
+  for (const plan of planNames) {
+    for (const leg of uniqueLegs) {
+      const row: TestPlanRow = {
+        test_plan_name: plan,
+        code: leg.code,
+        uplink: leg.uplink,
+        downlink: leg.downlink,
+        _applicable: {},
+      };
+      for (const param of parameterColumns.value) {
+        row._applicable[param] = leg.applicable;
+        row[param] = leg.applicable ? true : null;
       }
+      out.push(row);
     }
   }
 
@@ -254,8 +235,11 @@ function buildRows(transmitters: Transmitter[]): TestPlanRow[] {
 }
 
 async function load() {
-  const [typesRes, transmittersRes] = await Promise.all([
+  const [typesRes, transpondersRes, rangingRes, receiversRes, transmittersRes] = await Promise.all([
     api.getTestPlanTypes(),
+    api.getProjectTransponders(),
+    api.getRangingThresholdRows(),
+    api.getReceivers(),
     api.getTransmitters(),
   ]);
 
@@ -263,40 +247,34 @@ async function load() {
     toast.add({ severity: 'error', summary: 'Load Failed', detail: 'Unable to load test plan types.', life: 3500 });
     return;
   }
-
   testPlanTypes.value = Array.isArray(typesRes.data.value) ? typesRes.data.value as string[] : [];
 
-  if (transmittersRes.error.value) {
-    toast.add({ severity: 'error', summary: 'Load Failed', detail: 'Unable to load transmitter rows.', life: 3500 });
+  if (transpondersRes.error.value || rangingRes.error.value) {
+    toast.add({ severity: 'error', summary: 'Load Failed', detail: 'Unable to load transponder data.', life: 3500 });
     return;
   }
 
-  const list = (transmittersRes.data.value as Transmitter[]) ?? [];
-  const transmitters = list.filter((t) => String(t.system_type ?? '').toLowerCase().includes('transmitter'));
+  const tpPayload = (transpondersRes.data.value as ProjectTranspondersResponse) ?? { rows: [] };
+  const projectTransponders = Array.isArray(tpPayload?.rows) ? tpPayload.rows : [];
+  const rangingRows = Array.isArray(rangingRes.data.value) ? (rangingRes.data.value as RangingThresholdRow[]) : [];
+  const receivers = Array.isArray(receiversRes.data.value) ? (receiversRes.data.value as Receiver[]) : [];
+  const transmitters = Array.isArray(transmittersRes.data.value) ? (transmittersRes.data.value as Transmitter[]) : [];
 
-  const allParams = new Set<string>();
-  for (const tx of transmitters) {
-    getApplicableParameterNames(tx).forEach((p) => allParams.add(p));
-  }
-
-  const knownOrder = ['power', 'frequency', 'modulation_index', 'spurious'];
-  const extras = [...allParams].filter((k) => !knownOrder.includes(k)).sort((a, b) => a.localeCompare(b));
-  parameterColumns.value = [...knownOrder.filter((k) => allParams.has(k)), ...extras];
-
-  const built = buildRows(transmitters);
+  parameterColumns.value = [...TRANSPONDER_PARAMS];
+  const built = buildRows(rangingRows, projectTransponders, receivers, transmitters);
   await applySavedSelections(built);
   rows.value = built;
 }
 
-function rowKey(r: { code: string; port: string; frequency_label: string }) {
-  return `${r.code}|${r.port}|${r.frequency_label}`;
+function rowKey(r: { code: string; uplink: string; downlink: string }) {
+  return `${r.code}|${r.uplink}|${r.downlink}`;
 }
 
 async function applySavedSelections(rs: TestPlanRow[]) {
   const plans = testPlanTypes.value;
   if (plans.length === 0) return;
   const results = await Promise.all(
-    plans.map((p) => api.getTestPlanSelections('transmitter', p)),
+    plans.map((p) => api.getTestPlanSelections('transponder', p)),
   );
   const byPlan = new Map<string, Map<string, Record<string, boolean>>>();
   plans.forEach((plan, i) => {
@@ -305,7 +283,7 @@ async function applySavedSelections(rs: TestPlanRow[]) {
     const data: any = res.data.value;
     const map = new Map<string, Record<string, boolean>>();
     for (const sr of (data.rows ?? [])) {
-      const key = `${String(sr.code ?? '')}|${String(sr.port ?? '')}|${String(sr.frequency_label ?? '')}`;
+      const key = `${String(sr.transponder_code ?? '')}|${String(sr.uplink ?? '')}|${String(sr.downlink ?? '')}`;
       const params = (sr.params && typeof sr.params === 'object') ? sr.params : {};
       map.set(key, params);
     }
@@ -340,22 +318,22 @@ async function save() {
       const payload = {
         test_plan_name: plan,
         rows: planRows.map((r) => ({
-          code: r.code,
-          port: r.port,
-          frequency_label: r.frequency_label,
+          transponder_code: r.code,
+          uplink: r.uplink,
+          downlink: r.downlink,
           params: parameterColumns.value.reduce<Record<string, boolean>>((acc, p) => {
             acc[p] = r._applicable[p] ? !!r[p] : false;
             return acc;
           }, {}),
         })),
       };
-      const res = await api.saveTestPlanSelections('transmitter', payload);
+      const res = await api.saveTestPlanSelections('transponder', payload);
       if (res.error.value) errors.push(plan);
     }
     if (errors.length > 0) {
       toast.add({ severity: 'error', summary: 'Save Failed', detail: `Could not save: ${errors.join(', ')}`, life: 4000 });
     } else {
-      toast.add({ severity: 'success', summary: 'Saved', detail: 'Transmitter test plan selections saved.', life: 2500 });
+      toast.add({ severity: 'success', summary: 'Saved', detail: 'Transponder test plan selections saved.', life: 2500 });
     }
   } finally {
     saving.value = false;

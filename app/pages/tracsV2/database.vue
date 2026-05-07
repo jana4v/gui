@@ -18,11 +18,8 @@
       <!-- Systems → Receiver -->
       <TracsV2DatabaseSystemsReceiverPanel v-else-if="activeSection === 'receiver'" />
 
-      <!-- Systems → Transponder (placeholder) -->
-      <div v-else-if="activeSection === 'transponder'" class="coming-soon">
-        <i class="pi pi-server" />
-        <p>Transponder management — coming soon</p>
-      </div>
+      <!-- Systems → Transponder -->
+      <TracsV2DatabaseSystemsTransponderPanel v-else-if="activeSection === 'transponder'" />
 
       <!-- Specifications -->
       <TracsV2DatabaseSpecificationsPanel
@@ -36,17 +33,14 @@
       <!-- Test Profiles → Transmitter / Spurious / Profile -->
       <SpuriousProfilePanel v-else-if="activeSection === 'tp_tx_spurious_profile'" />
 
-      <!-- Test Profiles → Receiver (coming soon) -->
-      <div v-else-if="activeSection === 'test_profiles_receiver'" class="coming-soon">
-        <i class="pi pi-server" />
-        <p>Test Profiles / <strong class="section-name">Receiver</strong> — coming soon</p>
-      </div>
+      <!-- Test Profiles → Receiver -->
+      <ReceiverTestProfilesPanel v-else-if="activeSection === 'test_profiles_receiver'" />
 
-      <!-- Test Profiles → Transponder (coming soon) -->
-      <div v-else-if="activeSection === 'test_profiles_transponder'" class="coming-soon">
-        <i class="pi pi-server" />
-        <p>Test Profiles / <strong class="section-name">Transponder</strong> — coming soon</p>
-      </div>
+      <!-- Test Profiles → Transponder -->
+      <TransponderTestProfilesPanel v-else-if="activeSection === 'test_profiles_transponder'" />
+
+      <!-- Specifications → Ranging Threshold (standalone panel) -->
+      <RangingThresholdPanel v-else-if="activeSection === 'specifications_ranging_threshold'" />
 
       <!-- Test Systems → Instruments -->
       <TestSystemsInstrumentsPanel v-else-if="activeSection === 'test_systems_instruments'" />
@@ -60,11 +54,8 @@
       <!-- On Board Losses → Transmitter -->
       <OnBoardLossesTransmitterLossPanel v-else-if="activeSection === 'on_board_losses_transmitter'" />
 
-      <!-- On Board Losses → Receiver (coming soon) -->
-      <div v-else-if="activeSection === 'on_board_losses_receiver'" class="coming-soon">
-        <i class="pi pi-server" />
-        <p>On Board Losses / <strong class="section-name">Receiver</strong> — coming soon</p>
-      </div>
+      <!-- On Board Losses → Receiver -->
+      <OnBoardLossesReceiverLossPanel v-else-if="activeSection === 'on_board_losses_receiver'" />
 
       <!-- On Board Losses → Transponder (coming soon) -->
       <div v-else-if="activeSection === 'on_board_losses_transponder'" class="coming-soon">
@@ -90,17 +81,11 @@
       <!-- Test Plan → Transmitter -->
       <TestPlanTransmitterPanel v-else-if="activeSection === 'test_plan_transmitter'" />
 
-      <!-- Test Plan → Receiver (coming soon) -->
-      <div v-else-if="activeSection === 'test_plan_receiver'" class="coming-soon">
-        <i class="pi pi-server" />
-        <p>Test Plan / <strong class="section-name">Receiver</strong> — coming soon</p>
-      </div>
+      <!-- Test Plan → Receiver -->
+      <TestPlanReceiverPanel v-else-if="activeSection === 'test_plan_receiver'" />
 
-      <!-- Test Plan → Transponder (coming soon) -->
-      <div v-else-if="activeSection === 'test_plan_transponder'" class="coming-soon">
-        <i class="pi pi-server" />
-        <p>Test Plan / <strong class="section-name">Transponder</strong> — coming soon</p>
-      </div>
+      <!-- Test Plan → Transponder -->
+      <TestPlanTransponderPanel v-else-if="activeSection === 'test_plan_transponder'" />
 
       <!-- ENV Data -->
       <EnvDataPanel v-else-if="activeSection === 'env_data'" />
@@ -120,13 +105,21 @@
 import { initMenu } from '@/composables/tracsV2/SideNav';
 import SpuriousSearchBandsPanel from '@/components/TracsV2/Database/TestProfiles/SpuriousSearchBandsPanel.vue';
 import SpuriousProfilePanel from '@/components/TracsV2/Database/TestProfiles/SpuriousProfilePanel.vue';
+import ReceiverTestProfilesPanel from '@/components/TracsV2/Database/TestProfiles/ReceiverTestProfilesPanel.vue';
+import TransponderTestProfilesPanel from '@/components/TracsV2/Database/TestProfiles/TransponderTestProfilesPanel.vue';
+import TracsV2DatabaseSystemsTransponderPanel from '@/components/TracsV2/Database/Systems/TransponderPanel.vue';
 import TestSystemsInstrumentsPanel from '@/components/TracsV2/Database/TestSystems/InstrumentsPanel.vue';
 import TestSystemsTsmPathsPanel from '@/components/TracsV2/Database/TestSystems/TsmPathsPanel.vue';
 import TestSystemsPowerMeterPanel from '@/components/TracsV2/Database/TestSystems/PowerMeterPanel.vue';
 import OnBoardLossesTransmitterLossPanel from '@/components/TracsV2/Database/OnBoardLosses/TransmitterLossPanel.vue';
+import OnBoardLossesReceiverLossPanel from '@/components/TracsV2/Database/OnBoardLosses/ReceiverLossPanel.vue';
 import CalibrationTransmitterPanel from '@/components/TracsV2/Database/Calibration/TransmitterCalibrationPanel.vue';
 import TestPlanTransmitterPanel from '@/components/TracsV2/Database/TestPlan/TransmitterTestPlanPanel.vue';
+import TestPlanReceiverPanel from '@/components/TracsV2/Database/TestPlan/ReceiverTestPlanPanel.vue';
+import TestPlanTransponderPanel from '@/components/TracsV2/Database/TestPlan/TransponderTestPlanPanel.vue';
+     import RangingThresholdPanel from '@/components/TracsV2/Database/Specifications/RangingThresholdPanel.vue';
 import EnvDataPanel from '@/components/TracsV2/Database/EnvData/EnvDataPanel.vue';
+import { useUiStatePersistence } from '@/composables/tracsV2/useUiStatePersistence';
 
 const activeSection = ref('transmitter');
 
@@ -143,6 +136,7 @@ const sectionLabels: Record<string, string> = {
   on_board_losses_transmitter: 'On Board Losses / Transmitter',
   on_board_losses_receiver: 'On Board Losses / Receiver',
   on_board_losses_transponder: 'On Board Losses / Transponder',
+      specifications_ranging_threshold: 'Specifications / Ranging Threshold',
   calibration_transmitter: 'Calibration / Transmitter',
   calibration_receiver: 'Calibration / Receiver',
   calibration_transponder: 'Calibration / Transponder',
@@ -169,7 +163,13 @@ const selectedSpecParameter = computed(() => specSectionToParameter[activeSectio
 
 const sectionLabel = computed(() => sectionLabels[activeSection.value] ?? activeSection.value);
 
+      // NOTE: 'specifications_ranging_threshold' is handled by its own panel above
 initMenu(3);
+
+// Persist active section across navigation/reloads.
+const ui = useUiStatePersistence('ui_state:tracsV2:database');
+ui.bindRefs({ activeSection });
+onMounted(() => { void ui.load(); });
 
 function handleAdd() {
   // Future: trigger add action in active panel via event bus or store
@@ -219,5 +219,16 @@ function handleRemove() {
 
 .section-name {
   color: #22d3ee;
+}
+
+/* ── Light theme overrides ────────────────────────────────────────────── */
+html:not(.dark) .db-page {
+  background: var(--p-surface-50);
+}
+html:not(.dark) .coming-soon {
+  color: var(--p-text-muted-color);
+}
+html:not(.dark) .coming-soon .pi {
+  color: var(--p-surface-300);
 }
 </style>

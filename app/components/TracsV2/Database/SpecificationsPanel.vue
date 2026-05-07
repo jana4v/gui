@@ -44,7 +44,7 @@
         :cellSelection="cellSelectionConfig"
         :suppressClickEdit="true"
         :suppressColumnVirtualisation="true"
-        :suppressContextMenu="true"
+        :suppressContextMenu="false"
         :suppressMovableColumns="true"
         :undoRedoCellEditing="true"
         :undoRedoCellEditingLimit="20"
@@ -106,6 +106,7 @@ import {
   type CatalogSpecRow,
   type ParameterName,
 } from '@/composables/tracsV2/useTransmitterApi';
+import { useUiStatePersistence } from '@/composables/tracsV2/useUiStatePersistence';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
 registerAllModules();
@@ -115,6 +116,7 @@ type FbtMatrix = (string | number)[][];
 const api = useTransmitterApi();
 const toast = useToast();
 const isDark = useDark();
+const ui = useUiStatePersistence('ui_state:tracsV2:db:specifications');
 
 const props = withDefaults(
   defineProps<{
@@ -397,10 +399,59 @@ function getSelectedFbtTargets(api: GridApi, fallbackEvent?: any): Array<{ rowNo
   return [];
 }
 
-function createBaseColumn(key: string): ColDef {
+function createBaseColumn(key: string, parameter?: ParameterName): ColDef {
+  // Map of field-key → display header (with units where applicable).
+  // Falls back to title-cased key when not listed.
+  const headerOverrides: Record<string, string> = {
+    frequency: 'Frequency (MHz)',
+  };
+  // Identifier fields that never carry a value-unit suffix.
+  const identifierKeys = new Set([
+    'code',
+    'port',
+    'frequency',
+    'frequency_label',
+    'modulation_type',
+    'transmitter_code',
+    'transmitter_name',
+    'receiver_code',
+    'receiver_name',
+  ]);
+  // Per-parameter unit suffix applied to all non-identifier value columns.
+  const parameterUnitSuffix: Partial<Record<ParameterName, string>> = {
+    power: '(dBm)',
+    command_threshold: '(dBm)',
+  };
+  // Per-parameter per-field unit override (takes precedence over the
+  // blanket parameterUnitSuffix above). Use this when different columns
+  // in the same table carry different units (e.g. Frequency table:
+  // FBT* in MHz, tolerance in ppm).
+  const parameterFieldUnits: Partial<Record<ParameterName, Record<string, string>>> = {
+    frequency: {
+      specification: '(MHz)',
+      fbt: '(MHz)',
+      fbt_hot: '(MHz)',
+      fbt_cold: '(MHz)',
+      tolerance: '(ppm)',
+    },
+    modulation_index: {
+      tolerance: '(%)',
+    },
+    spurious: {
+      specification: '(dBc)',
+    },
+  };
+
+  let headerName = headerOverrides[key]
+    ?? key.replaceAll('_', ' ').replace(/\b\w/g, (s) => s.toUpperCase());
+  const fieldUnit = parameter ? parameterFieldUnits[parameter]?.[key] : undefined;
+  const unit = fieldUnit ?? (parameter ? parameterUnitSuffix[parameter] : undefined);
+  if (unit && !identifierKeys.has(key) && !headerName.includes('(')) {
+    headerName = `${headerName} ${unit}`;
+  }
   return {
     field: key,
-    headerName: key.replaceAll('_', ' ').replace(/\b\w/g, (s) => s.toUpperCase()),
+    headerName,
     editable: !(metaKeys.has(key) || readOnlyKeys.has(key)),
     valueFormatter: (params) => {
       const v = params.value;
@@ -438,6 +489,27 @@ function buildColumns(parameter: ParameterName, rows: Record<string, any>[]): Gr
 
   const preferred = ['code', 'port', 'frequency_label', 'frequency'];
 
+  if (parameter === 'command_threshold') {
+    const commandThresholdOrdered = [
+      ...preferred.filter((k) => allKeys.has(k)),
+      ...['max_input_power', 'specification', 'tolerance', 'fbt', 'fbt_hot', 'fbt_cold'].filter((k) => allKeys.has(k)),
+      ...[...allKeys].filter(
+        (k) => !preferred.includes(k)
+          && !metaKeys.has(k)
+          && !hiddenGridKeys.has(k)
+          && !['max_input_power', 'specification', 'tolerance', 'fbt', 'fbt_hot', 'fbt_cold'].includes(k),
+      ),
+    ];
+
+    return commandThresholdOrdered.map((key) => {
+      const col = createBaseColumn(key, parameter);
+      if (key === 'max_input_power') {
+        col.headerName = 'MaxInputPower (dBm)';
+      }
+      return col;
+    });
+  }
+
   if (parameter === 'modulation_index') {
     const toneCols = [...allKeys].filter((k) =>
       /^fbt(_hot|_cold)?_tone_/i.test(k),
@@ -469,9 +541,9 @@ function buildColumns(parameter: ParameterName, rows: Record<string, any>[]): Gr
       .sort((a, b) => Number(a[0]) - Number(b[0]))
       .map(([tone, fields]) => {
         const children: ColDef[] = [];
-        if (fields.fbt) children.push({ ...createBaseColumn(fields.fbt), headerName: 'FBT' });
-        if (fields.fbtHot) children.push({ ...createBaseColumn(fields.fbtHot), headerName: 'FBT Hot' });
-        if (fields.fbtCold) children.push({ ...createBaseColumn(fields.fbtCold), headerName: 'FBT Cold' });
+        if (fields.fbt) children.push({ ...createBaseColumn(fields.fbt, parameter), headerName: 'FBT' });
+        if (fields.fbtHot) children.push({ ...createBaseColumn(fields.fbtHot, parameter), headerName: 'FBT Hot' });
+        if (fields.fbtCold) children.push({ ...createBaseColumn(fields.fbtCold, parameter), headerName: 'FBT Cold' });
 
         return {
           headerName: `Tone ${tone} KHz`,
@@ -479,7 +551,7 @@ function buildColumns(parameter: ParameterName, rows: Record<string, any>[]): Gr
         };
       });
 
-    return [...nonToneOrdered.map((k) => createBaseColumn(k)), ...toneGroups];
+    return [...nonToneOrdered.map((k) => createBaseColumn(k, parameter)), ...toneGroups];
   }
 
   if (parameter === 'spurious') {
@@ -496,10 +568,10 @@ function buildColumns(parameter: ParameterName, rows: Record<string, any>[]): Gr
     };
 
     return ordered.map((key) => {
-      if (!rendererByField[key]) return createBaseColumn(key);
+      if (!rendererByField[key]) return createBaseColumn(key, parameter);
 
       return {
-        ...createBaseColumn(key),
+        ...createBaseColumn(key, parameter),
         editable: true,
         minWidth: 180,
         width: 210,
@@ -520,7 +592,7 @@ function buildColumns(parameter: ParameterName, rows: Record<string, any>[]): Gr
     ...[...allKeys].filter((k) => !preferred.includes(k) && !metaKeys.has(k) && !hiddenGridKeys.has(k)),
   ];
 
-  return ordered.map((key) => createBaseColumn(key));
+  return ordered.map((key) => createBaseColumn(key, parameter));
 }
 
 function flattenRows(parameter: ParameterName, payloadRows: CatalogSpecRow[]): Record<string, any>[] {
@@ -602,12 +674,162 @@ function buildReceiverCommandThresholdRows(existingRows: Record<string, any>[], 
           port: portName,
           frequency_label: frequencyLabel,
           frequency: frequencyHz,
+          max_input_power: existing?.max_input_power ?? -60,
           specification: existing?.specification ?? null,
           tolerance: existing?.tolerance ?? 0.5,
           fbt: existing?.fbt ?? null,
           fbt_hot: existing?.fbt_hot ?? null,
           fbt_cold: existing?.fbt_cold ?? null,
         });
+      }
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Extract per-transmitter ranging tones from each transmitter's
+ * `modulation_details.sub_carriers` definition. Returns a map of
+ * transmitter code → list of tone strings (in kHz, trimmed). The tone set
+ * comes from the transmitter itself (typically 32 kHz / 128 kHz for
+ * PSK_PM systems) — NOT from the global `/system-catalog/ranging-tones`
+ * catalog (which is for ranging-threshold tests, e.g. 22 / 27.777 kHz).
+ */
+function extractTonesByCode(transmitters: any[]): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const tx of transmitters) {
+    const code = String(tx?.code ?? '').trim();
+    if (!code) continue;
+    const details = tx?.modulation_details ?? {};
+    const subCarriers: any[] = Array.isArray(details?.sub_carriers) ? details.sub_carriers : [];
+    const tones: string[] = [];
+    const seen = new Set<string>();
+    for (const entry of subCarriers) {
+      const raw = Array.isArray(entry) ? entry[0] : entry;
+      if (raw === null || raw === undefined) continue;
+      const text = String(raw).trim();
+      if (text === '' || seen.has(text)) continue;
+      const num = Number(text);
+      if (!Number.isFinite(num) || num <= 0) continue;
+      seen.add(text);
+      tones.push(text);
+    }
+    out[code] = tones;
+  }
+  return out;
+}
+
+function buildTransmitterSpecRows(
+  parameter: ParameterName,
+  existingRows: Record<string, any>[],
+  transmitters: any[],
+  portsByCode: Record<string, any[]>,
+  frequenciesByCode: Record<string, any[]>,
+  tonesByCode: Record<string, string[]> = {},
+): Record<string, any>[] {
+  const existingMap = new Map<string, Record<string, any>>();
+  for (const row of existingRows) {
+    const key = `${String(row.code ?? '')}|${String(row.port ?? '')}|${String(row.frequency_label ?? '')}|${String(row.frequency ?? '')}`;
+    existingMap.set(key, row);
+  }
+
+  const out: Record<string, any>[] = [];
+
+  for (const transmitter of transmitters) {
+    const code = String(transmitter?.code ?? '').trim();
+    if (!code) continue;
+    const modulationType = String(transmitter?.modulation_type ?? '').trim();
+
+    const ports = portsByCode[code] ?? [];
+    const frequencies = frequenciesByCode[code] ?? [];
+
+    for (const port of ports) {
+      const portId = Number(port?.port_id ?? 0);
+      const portName = String(port?.port_name ?? '').trim();
+      if (!portId || !portName) continue;
+
+      for (const frequency of frequencies) {
+        const frequencyId = Number(frequency?.frequency_id ?? 0);
+        const frequencyLabel = String(frequency?.frequency_label ?? '').trim();
+        const frequencyHz = String(frequency?.frequency_hz ?? '').trim();
+        if (!frequencyId || !frequencyLabel) continue;
+
+        const key = `${code}|${portName}|${frequencyLabel}|${frequencyHz}`;
+        const existing = existingMap.get(key);
+
+        const defaults: Record<string, any> = {
+          row_id: existing?.row_id,
+          system_kind: 'transmitter',
+          system_code: code,
+          parameter_type: parameter,
+          port_id: portId,
+          frequency_id: frequencyId,
+          sort_order: existing?.sort_order ?? 0,
+          transmitter_code: code,
+          transmitter_name: code,
+          modulation_type: modulationType,
+          code,
+          port: portName,
+          frequency_label: frequencyLabel,
+          frequency: frequencyHz,
+        };
+
+        if (parameter === 'power') {
+          Object.assign(defaults, {
+            specification: existing?.specification ?? null,
+            tolerance: existing?.tolerance ?? null,
+            fbt: existing?.fbt ?? null,
+            fbt_hot: existing?.fbt_hot ?? null,
+            fbt_cold: existing?.fbt_cold ?? null,
+          });
+        } else if (parameter === 'frequency') {
+          Object.assign(defaults, {
+            tolerance: existing?.tolerance ?? null,
+            fbt: existing?.fbt ?? null,
+            fbt_hot: existing?.fbt_hot ?? null,
+            fbt_cold: existing?.fbt_cold ?? null,
+          });
+        } else if (parameter === 'modulation_index') {
+          Object.assign(defaults, {
+            specification: existing?.specification ?? 0.9,
+            tolerance: existing?.tolerance ?? 20,
+          });
+          // Pre-populate dynamic tone columns so the grid always shows
+          // FBT / FBT Hot / FBT Cold groups even when no rows have been
+          // saved yet. Tones come from each transmitter's own
+          // modulation_details.sub_carriers (NOT the global ranging-tones
+          // catalog). Existing values are preserved (merged below).
+          const txTones = tonesByCode[code] ?? [];
+          for (const tone of txTones) {
+            const t = String(tone ?? '').trim();
+            if (!t) continue;
+            const fbtKey = `fbt_tone_${t}`;
+            const fbtHotKey = `fbt_hot_tone_${t}`;
+            const fbtColdKey = `fbt_cold_tone_${t}`;
+            defaults[fbtKey] = existing?.[fbtKey] ?? null;
+            defaults[fbtHotKey] = existing?.[fbtHotKey] ?? null;
+            defaults[fbtColdKey] = existing?.[fbtColdKey] ?? null;
+          }
+        } else if (parameter === 'spurious') {
+          Object.assign(defaults, {
+            specification: existing?.specification ?? null,
+            tolerance: existing?.tolerance ?? null,
+            fbt: existing?.fbt ?? null,
+            fbt_hot: existing?.fbt_hot ?? null,
+            fbt_cold: existing?.fbt_cold ?? null,
+          });
+        }
+
+        // Preserve any extra fields already saved on the existing row
+        // (e.g. dynamic tone columns for modulation_index).
+        if (existing) {
+          for (const k of Object.keys(existing)) {
+            if (!(k in defaults)) defaults[k] = existing[k];
+          }
+        }
+
+        out.push(defaults);
       }
     }
   }
@@ -649,6 +871,101 @@ async function loadParameter(parameter: ParameterName) {
     }));
 
     rows = buildReceiverCommandThresholdRows(rows, receivers, portsByCode, frequenciesByCode);
+  } else {
+    // For transmitter-side parameters synthesize rows for every
+    // (transmitter × port × frequency) combo so the grid is never blank
+    // when no spec rows have been saved yet. Existing saved rows are merged
+    // by (code, port, frequency_label, frequency).
+    const transmittersRes = await api.getTransmitters();
+    const transmittersRaw = transmittersRes.data.value as any;
+    const transmitters: any[] = Array.isArray(transmittersRaw)
+      ? transmittersRaw
+      : Array.isArray(transmittersRaw?.transmitters)
+        ? transmittersRaw.transmitters
+        : [];
+
+    if (transmitters.length > 0) {
+      const portsByCode: Record<string, any[]> = {};
+      const frequenciesByCode: Record<string, any[]> = {};
+
+      await Promise.all(transmitters.map(async (transmitter) => {
+        const code = String(transmitter?.code ?? '').trim();
+        if (!code) return;
+        const [portsRes, frequenciesRes] = await Promise.all([
+          api.getSystemCatalogSystemPorts('transmitter', code),
+          api.getSystemCatalogSystemFrequencies('transmitter', code),
+        ]);
+        portsByCode[code] = Array.isArray(portsRes.data.value) ? (portsRes.data.value as any[]) : [];
+        frequenciesByCode[code] = Array.isArray(frequenciesRes.data.value) ? (frequenciesRes.data.value as any[]) : [];
+      }));
+
+      // For modulation_index the tone-group columns are dynamic. Each
+      // transmitter carries its own tone set in
+      // `modulation_details.sub_carriers` — use that (NOT the global
+      // /system-catalog/ranging-tones list which is for ranging tests).
+      let tonesByCode: Record<string, string[]> = {};
+      if (parameter === 'modulation_index') {
+        tonesByCode = extractTonesByCode(transmitters);
+      }
+
+      const synthesized = buildTransmitterSpecRows(parameter, rows, transmitters, portsByCode, frequenciesByCode, tonesByCode);
+      if (synthesized.length > 0) {
+        rows = synthesized;
+      }
+    }
+
+    // Final fallback: if the system_catalog tables aren't seeded with ports/
+    // frequencies for transmitters, build rows from each transmitter's own
+    // modulation_details via the legacy parameter-rows endpoint. This
+    // mirrors the working approach used by other transmitter panels.
+    if (rows.length === 0) {
+      const paramRes = await api.getParameterRows(parameter);
+      const paramData = paramRes.data.value as any;
+      const paramRows: any[] = Array.isArray(paramData?.rows) ? paramData.rows : [];
+      rows = paramRows.map((entry) => {
+        const inner = (entry?.row ?? {}) as Record<string, any>;
+        return {
+          system_kind: 'transmitter',
+          system_code: entry?.transmitter_code,
+          parameter_type: parameter,
+          transmitter_code: entry?.transmitter_code,
+          transmitter_name: entry?.transmitter_name ?? entry?.transmitter_code,
+          modulation_type: entry?.modulation_type ?? '',
+          code: inner.code ?? entry?.transmitter_code,
+          port: inner.port,
+          frequency_label: inner.frequency_label,
+          frequency: inner.frequency,
+          ...inner,
+        } as Record<string, any>;
+      });
+
+      // Legacy data path may not include any fbt_tone_* keys yet — pad
+      // each row with the tones from each transmitter's own
+      // modulation_details.sub_carriers so FBT tone-group columns always
+      // render in the modulation_index grid.
+      if (parameter === 'modulation_index' && rows.length > 0) {
+        const transmittersRes2 = await api.getTransmitters();
+        const transmittersRaw2 = transmittersRes2.data.value as any;
+        const transmitters2: any[] = Array.isArray(transmittersRaw2)
+          ? transmittersRaw2
+          : Array.isArray(transmittersRaw2?.transmitters)
+            ? transmittersRaw2.transmitters
+            : [];
+        const tonesByCode = extractTonesByCode(transmitters2);
+        for (const row of rows) {
+          const txCode = String(row.transmitter_code ?? row.code ?? '').trim();
+          const tones = tonesByCode[txCode] ?? [];
+          for (const tone of tones) {
+            const fbtKey = `fbt_tone_${tone}`;
+            const fbtHotKey = `fbt_hot_tone_${tone}`;
+            const fbtColdKey = `fbt_cold_tone_${tone}`;
+            if (!(fbtKey in row)) row[fbtKey] = null;
+            if (!(fbtHotKey in row)) row[fbtHotKey] = null;
+            if (!(fbtColdKey in row)) row[fbtColdKey] = null;
+          }
+        }
+      }
+    }
   }
 
   tableRows[parameter] = rows;
@@ -723,6 +1040,10 @@ async function saveParameter(parameter: ParameterName) {
 function onGridReady(parameter: ParameterName, event: GridReadyEvent) {
   gridApis.value[parameter] = event.api;
   setTimeout(() => autoSizeDisplayedColumns(parameter), 0);
+  // Each parameter has its own grid; key by parameter name so layouts persist
+  // independently per spec table.
+  ui.registerGrid(parameter);
+  ui.onGridReady(parameter, event);
 }
 
 function onGridReadyParameter(parameter: ParameterName, event: GridReadyEvent) {
@@ -853,6 +1174,7 @@ onMounted(async () => {
   for (const parameter of visibleParameters.value) {
     await loadParameter(parameter);
   }
+  await ui.load();
 });
 
 watch(

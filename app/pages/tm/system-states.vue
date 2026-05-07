@@ -50,9 +50,7 @@ interface SystemState {
 }
 
 const storageKey = 'tm.systemStates.v1'
-const gatewayBase = import.meta.client
-  ? `http://${window.location.host}/api/go/v1`
-  : ''
+const { apiBase: gatewayBase } = useRuntimeConfig().public
 
 console.log('🔧 System States - Initialized')
 console.log('   Gateway Base:', gatewayBase)

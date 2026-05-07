@@ -34,7 +34,7 @@
           :rowSelection="rowSelection"
           :autoGroupColumnDef="autoGroupColumnDef"
           :defaultColDef="defaultColDef"
-          :suppressContextMenu="true"
+          :suppressContextMenu="false"
           :suppressMovableColumns="true"
           :suppressGroupChangesColumnVisibility="'suppressHideOnGroup'"
           :groupDefaultExpanded="0"
@@ -92,7 +92,7 @@
           :columnDefs="calDataColumnDefs"
           :rowData="displayRows"
           :defaultColDef="sampleDefaultColDef"
-          :suppressContextMenu="true"
+          :suppressContextMenu="false"
           :suppressMovableColumns="true"
           :domLayout="'normal'"
         />
@@ -129,6 +129,8 @@ import {
   useCalibrationDataApi,
   type DownlinkCalDataRowsResponse,
 } from '@/composables/tracsV2/useCalibrationDataApi';
+import { toNumberOrNull as toNumber } from '@/composables/tracsV2/utils';
+import { useUiStatePersistence } from '@/composables/tracsV2/useUiStatePersistence';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
 
@@ -155,6 +157,8 @@ const toast = useToast();
 const api = useTransmitterApi();
 const runApi = useCalibrationRunApi();
 const calibrationDataApi = useCalibrationDataApi();
+const ui = useUiStatePersistence(`ui_state:tracsV2:calibration:downlink:${props.calType}`);
+ui.registerGrid('channels');
 
 const rows = ref<DownlinkChannelRow[]>([]);
 const spuriousBandConfigs = ref<SpuriousBandConfigRow[]>([]);
@@ -247,7 +251,7 @@ const calDataColumnDefs: ColDef[] = [
   { field: 'port', headerName: 'Port', minWidth: 100, flex: 1 },
   { field: 'frequency', headerName: 'Frequency (MHz)', minWidth: 150, flex: 1 },
   { field: 'frequency_label', headerName: 'Frequency Label', minWidth: 150, flex: 1 },
-  { field: 'value', headerName: 'Value (dB)', minWidth: 120, flex: 1 },
+  { field: 'value', headerName: 'Value (dB)', minWidth: 120, flex: 1, valueFormatter: (p: any) => p?.value !== undefined && p?.value !== null && p?.value !== '' ? Math.abs(Number(p.value)).toFixed(1) : '' },
   { field: 'datetime', headerName: 'DateTime', minWidth: 200, flex: 1.5 },
 ];
 
@@ -269,7 +273,7 @@ const columnDefs: ColDef[] = [
   },
   {
     field: 'frequency',
-    headerName: 'Frequency',
+    headerName: 'Frequency (MHz)',
     editable: false,
     minWidth: 140,
     flex: 1,
@@ -298,6 +302,7 @@ function onGridReady(event: GridReadyEvent) {
   gridApi.value = event.api;
   onSelectionChanged();
   void selectUncalibratedRowsByDefault();
+  ui.onGridReady('channels', event);
 }
 
 function onSelectionChanged() {
@@ -329,12 +334,6 @@ function normalizeFrequency(value: string | number) {
   return Number.isFinite(numeric) ? numeric.toFixed(6) : '';
 }
 
-function toNumber(value: unknown): number | null {
-  const text = String(value ?? '').trim();
-  if (text === '') return null;
-  const n = Number(text);
-  return Number.isNaN(n) ? null : n;
-}
 
 function extractOffsets(matrix: unknown): number[] {
   const offsets: number[] = [];
@@ -812,6 +811,8 @@ async function generateReport() {
 }
 
 onMounted(async () => {
+  ui.bindRefs({ calSgLevel });
+  await ui.load();
   await load();
   void loadCalibrationDataForCalId();
 

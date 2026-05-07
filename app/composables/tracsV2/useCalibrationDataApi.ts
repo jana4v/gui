@@ -57,7 +57,9 @@ export interface CalibrationReportGenerateResponse {
 export interface MeasureOptionsResponse {
   test_phases: string[];
   cal_ids: string[];
+  test_plan_types: string[];
   default_cal_id: string | null;
+  default_test_plan_type: string | null;
 }
 
 export interface MeasureTableRow {
@@ -69,6 +71,8 @@ export interface MeasureTableRow {
   frequency_selected: boolean;
   modulation_index_selected: boolean;
   spurious_selected: boolean;
+  command_threshold_selected?: boolean;
+  ranging_threshold_selected?: boolean;
 }
 
 export interface MeasureRunStartRequest {
@@ -103,6 +107,15 @@ export interface MeasureRunResultRow {
   measured_value: number;
   applied_loss: number;
   final_value: number;
+  raw_value?: number;
+  system_loss?: number;
+  fixed_pad_loss?: number;
+  antenna_gain?: number;
+  ground_antenna_gain?: number;
+  distance?: number;
+  fspl?: number;
+  total_loss_calibration?: number;
+  on_board_loss?: number;
   status: string;
   message: string;
   timestamp: string;

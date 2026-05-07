@@ -43,7 +43,7 @@
         :cellSelection="cellSelection"
         :rowDragManaged="true"
         :animateRows="true"
-        :suppressContextMenu="true"
+        :suppressContextMenu="false"
         :suppressMovableColumns="true"
         :undoRedoCellEditing="true"
         :undoRedoCellEditingLimit="20"
@@ -73,12 +73,15 @@ import {
   type ProjectInstrumentsResponse,
   type ProjectInstrumentRow,
 } from '@/composables/tracsV2/useTransmitterApi';
+import { useUiStatePersistence } from '@/composables/tracsV2/useUiStatePersistence';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
 
 const toast = useToast();
 const isDark = useDark();
 const api = useTransmitterApi();
+const ui = useUiStatePersistence('ui_state:tracsV2:db:testSystems:instruments');
+ui.registerGrid('main');
 
 const ADDRESS_HINT = 'LAN: 172.20.xx.xxx | GPIB/VISA: 0:8 (preferred) or GPIB0::8::INSTR';
 
@@ -216,6 +219,7 @@ function defaultRowsFromCatalog(catalog: Record<string, string[]>): InstrumentRo
 function onGridReady(event: GridReadyEvent) {
   gridApi.value = event.api;
   event.api.sizeColumnsToFit();
+  ui.onGridReady('main', event);
 }
 
 function showAddressHelp() {
@@ -308,8 +312,9 @@ async function load() {
   }
 }
 
-onMounted(() => {
-  void load();
+onMounted(async () => {
+  await load();
+  await ui.load();
 });
 </script>
 

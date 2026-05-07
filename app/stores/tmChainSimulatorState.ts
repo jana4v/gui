@@ -30,7 +30,7 @@ export const useTmChainSimulatorStateStore = defineStore('tmChainSimulatorState'
       if (!import.meta.client)
         return
 
-      const apiBase = `http://${window.location.host}/api/go/v1`
+      const { apiBase } = useRuntimeConfig().public
       try {
         const resp = await $fetch<{ hash: string, values: Record<string, string> }>(
           `${apiBase}/redis/hash/read`,
@@ -60,7 +60,7 @@ export const useTmChainSimulatorStateStore = defineStore('tmChainSimulatorState'
       if (!import.meta.client)
         return
 
-      const apiBase = `http://${window.location.host}/api/go/v1`
+      const { apiBase } = useRuntimeConfig().public
       const snapshot = {
         selectedChains: [...this.selectedChains],
         selectedSubsystems: [...this.selectedSubsystems],

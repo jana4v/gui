@@ -226,4 +226,21 @@ async function applyDefaultCalId() {
   background-color: #22d3ee !important;
 }
 
+/* ── Light theme overrides ──────────────────────────────────────────────── */
+html:not(.dark) .cal-id-selector {
+  background: var(--p-surface-0);
+  border-bottom-color: var(--p-content-border-color);
+}
+html:not(.dark) .selector-label {
+  color: var(--p-text-muted-color);
+}
+html:not(.dark) :deep(.cal-id-ac-input) {
+  background: var(--p-surface-0) !important;
+  border-color: var(--p-form-field-border-color) !important;
+  color: var(--p-text-color) !important;
+}
+html:not(.dark) :deep(.cal-type-select .p-select-label) {
+  color: var(--p-text-color) !important;
+}
+
 </style>

@@ -39,7 +39,7 @@
         :defaultColDef="defaultColDef"
           :cellSelection="cellSelection"
         rowSelection="multiple"
-        :suppressContextMenu="true"
+        :suppressContextMenu="false"
         :suppressMovableColumns="true"
         :undoRedoCellEditing="true"
         :undoRedoCellEditingLimit="20"
@@ -67,17 +67,21 @@ import {
   useTransmitterApi,
   type SpuriousBandConfigRow,
 } from '@/composables/tracsV2/useTransmitterApi';
+import { useUiStatePersistence } from '@/composables/tracsV2/useUiStatePersistence';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
 
 const toast = useToast();
 const isDark = useDark();
 const api = useTransmitterApi();
+const ui = useUiStatePersistence('ui_state:tracsV2:db:testProfiles:spuriousBands');
+ui.registerGrid('main');
 
-const PROFILE_OPTIONS = ['Detailed', 'Short', 'Minimal'] as const;
+const DEFAULT_PROFILE_NAME = 'Detailed';
 
 const rows = ref<SpuriousBandConfigRow[]>([]);
 const selectedRows = ref<SpuriousBandConfigRow[]>([]);
+const profileOptions = ref<string[]>([]);
 const saving = ref(false);
 const gridApi = shallowRef<GridApi | null>(null);
 
@@ -88,13 +92,13 @@ const cellSelection = {
   handle: { mode: 'fill' as const, direction: 'xy' as const, suppressClearOnFillReduction: true },
 };
 
-const columnDefs: ColDef[] = [
+const columnDefs = computed<ColDef[]>(() => [
   {
     field: 'profile_name',
     headerName: 'Profile Name',
     editable: true,
     cellEditor: 'agSelectCellEditor',
-    cellEditorParams: { values: [...PROFILE_OPTIONS] },
+    cellEditorParams: { values: [...profileOptions.value] },
     checkboxSelection: true,
     headerCheckboxSelection: true,
     minWidth: 160,
@@ -125,11 +129,12 @@ const columnDefs: ColDef[] = [
     minWidth: 180,
     flex: 1,
   },
-];
+]);
 
 function onGridReady(event: GridReadyEvent) {
   gridApi.value = event.api;
   event.api.sizeColumnsToFit();
+  ui.onGridReady('main', event);
 }
 
 function onSelectionChanged(event: any) {
@@ -137,18 +142,30 @@ function onSelectionChanged(event: any) {
 }
 
 async function load() {
-  const res = await api.getSpuriousBandConfigs();
-  if (res.error.value) {
+  const [typesRes, bandsRes] = await Promise.all([
+    api.getTestPlanTypes(),
+    api.getSpuriousBandConfigs(),
+  ]);
+
+  if (typesRes.error.value) {
+    toast.add({ severity: 'error', summary: 'Load Failed', detail: 'Unable to load test plan types.', life: 3500 });
+    return;
+  }
+
+  profileOptions.value = Array.isArray(typesRes.data.value) ? typesRes.data.value as string[] : [];
+
+  if (bandsRes.error.value) {
     toast.add({ severity: 'error', summary: 'Load Failed', detail: 'Unable to load spurious band configs.', life: 3500 });
     return;
   }
-  rows.value = ((res.data.value as any)?.bands ?? []) as SpuriousBandConfigRow[];
+  rows.value = ((bandsRes.data.value as any)?.bands ?? []) as SpuriousBandConfigRow[];
 }
 
 function addRow() {
+  const defaultProfileName = profileOptions.value[0] ?? DEFAULT_PROFILE_NAME;
   rows.value = [
     ...rows.value,
-    { profile_name: '', enable: true, start_frequency: null, stop_frequency: null },
+    { profile_name: defaultProfileName, enable: true, start_frequency: null, stop_frequency: null },
   ];
 }
 
@@ -177,7 +194,10 @@ async function save() {
   }
 }
 
-onMounted(() => { void load(); });
+onMounted(async () => {
+  await load();
+  await ui.load();
+});
 </script>
 
 <style scoped>

@@ -33,7 +33,7 @@
           :rowSelection="rowSelection"
           :rowClassRules="rowClassRules"
           :defaultColDef="defaultColDef"
-          :suppressContextMenu="true"
+          :suppressContextMenu="false"
           :suppressMovableColumns="true"
           @grid-ready="onGridReady"
           @selection-changed="onSelectionChanged"
@@ -76,7 +76,7 @@
           :columnDefs="calSgSampleColumnDefs"
           :rowData="samples"
           :defaultColDef="sampleDefaultColDef"
-          :suppressContextMenu="true"
+          :suppressContextMenu="false"
           :suppressMovableColumns="true"
           :domLayout="'normal'"
           @grid-ready="onSampleGridReady"
@@ -93,7 +93,7 @@
           :columnDefs="injectCalSampleColumnDefs"
           :rowData="samples"
           :defaultColDef="sampleDefaultColDef"
-          :suppressContextMenu="true"
+          :suppressContextMenu="false"
           :suppressMovableColumns="true"
           :domLayout="'normal'"
           @grid-ready="onSampleGridReady"
@@ -131,6 +131,8 @@ import {
   type CalibrationRunSnapshot,
   type CalibrationSample,
 } from '@/composables/tracsV2/useCalibrationRunApi';
+import { toNumberOrNull as toNumber } from '@/composables/tracsV2/utils';
+import { useUiStatePersistence } from '@/composables/tracsV2/useUiStatePersistence';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
 
@@ -156,6 +158,9 @@ const toast = useToast();
 const api = useTransmitterApi();
 const runApi = useCalibrationRunApi();
 const calibrationDataApi = useCalibrationDataApi();
+const ui = useUiStatePersistence(`ui_state:tracsV2:calibration:${props.calType}:channels`);
+ui.registerGrid('channels');
+ui.registerGrid('samples');
 
 const rows = ref<CalSgChannelRow[]>([]);
 const statusLines = ref<string[]>(['Ready. Select channels and click Start Cal.']);
@@ -214,7 +219,7 @@ const columnDefs: ColDef[] = [
   },
   {
     field: 'frequency',
-    headerName: 'Frequency',
+    headerName: 'Frequency (MHz)',
     editable: false,
     minWidth: 140,
     flex: 1,
@@ -233,7 +238,7 @@ const calSgSampleColumnDefs: ColDef[] = [
   },
   {
     field: 'frequency',
-    headerName: 'Frequency',
+    headerName: 'Frequency (MHz)',
     editable: false,
     minWidth: 100,
     flex: 0.8,
@@ -246,7 +251,7 @@ const calSgSampleColumnDefs: ColDef[] = [
     flex: 0.8,
     valueFormatter: (params) => {
       const value = params.value as number | undefined;
-      return value !== undefined ? Number(value).toFixed(1) : '—';
+      return value !== undefined ? Math.abs(Number(value)).toFixed(1) : '—';
     },
   },
 ];
@@ -263,7 +268,7 @@ const injectCalSampleColumnDefs: ColDef[] = [
   },
   {
     field: 'frequency',
-    headerName: 'Frequency',
+    headerName: 'Frequency (MHz)',
     editable: false,
     minWidth: 100,
     flex: 0.8,
@@ -276,7 +281,7 @@ const injectCalSampleColumnDefs: ColDef[] = [
     flex: 0.8,
     valueFormatter: (params) => {
       const value = params.value as number | undefined;
-      return value !== undefined ? Number(value).toFixed(1) : '—';
+      return value !== undefined ? Math.abs(Number(value)).toFixed(1) : '—';
     },
   },
   {
@@ -287,7 +292,7 @@ const injectCalSampleColumnDefs: ColDef[] = [
     flex: 0.8,
     valueFormatter: (params) => {
       const value = params.value as number | undefined;
-      return value !== undefined ? Number(value).toFixed(1) : '—';
+      return value !== undefined ? Math.abs(Number(value)).toFixed(1) : '—';
     },
   },
 ];
@@ -305,6 +310,7 @@ function onGridReady(event: GridReadyEvent) {
   gridApi.value = event.api;
   onSelectionChanged();
   void selectUncalibratedRowsByDefault();
+  ui.onGridReady('channels', event);
 }
 
 function onSampleGridReady(event: GridReadyEvent) {
@@ -313,6 +319,7 @@ function onSampleGridReady(event: GridReadyEvent) {
   } else {
     calSgSampleGridApi.value = event.api;
   }
+  ui.onGridReady('samples', event);
 }
 
 function onSelectionChanged() {
@@ -540,12 +547,6 @@ function formatSampleChannel(sample: CalibrationSample): string {
   return String(sample.frequency_label ?? '').trim() || 'N/A';
 }
 
-function toNumber(value: unknown): number | null {
-  const text = String(value ?? '').trim();
-  if (text === '') return null;
-  const n = Number(text);
-  return Number.isNaN(n) ? null : n;
-}
 
 function extractOffsets(matrix: unknown): number[] {
   const offsets: number[] = [];
@@ -944,6 +945,7 @@ onMounted(async () => {
   resetRunUi('Ready. Select channels and click Start Cal.');
   await load();
   await loadCalibrationDataForCalId();
+  await ui.load();
 
   const active = await runApi.getActiveRun();
   if (!active.error.value && active.data.value) {

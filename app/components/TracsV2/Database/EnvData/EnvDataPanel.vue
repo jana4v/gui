@@ -25,7 +25,7 @@
         :defaultColDef="defaultColDef"
         :rowSelection="rowSelection"
         :cellSelection="cellSelection"
-        :suppressContextMenu="true"
+        :suppressContextMenu="false"
         :suppressMovableColumns="true"
         :stopEditingWhenCellsLoseFocus="false"
         :undoRedoCellEditing="true"
@@ -53,6 +53,7 @@ import {
   type EnvDataRow,
   type EnvDataRowsResponse,
 } from '@/composables/tracsV2/useTransmitterApi';
+import { useUiStatePersistence } from '@/composables/tracsV2/useUiStatePersistence';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
 
@@ -64,6 +65,8 @@ interface EnvDataGridRow {
 const toast = useToast();
 const isDark = useDark();
 const api = useTransmitterApi();
+const ui = useUiStatePersistence('ui_state:tracsV2:db:envData');
+ui.registerGrid('main');
 
 const rows = ref<EnvDataGridRow[]>([]);
 const saving = ref(false);
@@ -134,6 +137,7 @@ const columnDefs: ColDef[] = [
 function onGridReady(event: GridReadyEvent) {
   gridApi.value = event.api;
   event.api.sizeColumnsToFit();
+  ui.onGridReady('main', event);
 }
 
 async function pickDirectoryForRow(rowIndex: number): Promise<void> {
@@ -207,8 +211,9 @@ async function save() {
   }
 }
 
-onMounted(() => {
-  void load();
+onMounted(async () => {
+  await load();
+  await ui.load();
 });
 </script>
 

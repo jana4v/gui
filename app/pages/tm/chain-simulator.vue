@@ -81,9 +81,7 @@ let fixedTimer: ReturnType<typeof setInterval> | null = null
 
 // ─── API base ─────────────────────────────────────────────────────────────────
 
-const apiBase = import.meta.client
-  ? `http://${window.location.host}/api/go/v1`
-  : ''
+const { apiBase } = useRuntimeConfig().public
 
 // ─── derived chain sets ───────────────────────────────────────────────────────
 

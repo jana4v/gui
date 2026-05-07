@@ -39,7 +39,7 @@
         :rowData="defRows"
         :defaultColDef="defaultColDef"
         rowSelection="multiple"
-        :suppressContextMenu="true"
+        :suppressContextMenu="false"
         :suppressMovableColumns="true"
         :undoRedoCellEditing="true"
         :undoRedoCellEditingLimit="20"
@@ -67,7 +67,7 @@
         :columnDefs="spuriousProfileColDefs"
         :rowData="spuriousProfileRows"
         :defaultColDef="defaultColDef"
-        :suppressContextMenu="true"
+        :suppressContextMenu="false"
         :suppressMovableColumns="true"
         @grid-ready="onProfileGridReady"
       />
@@ -86,13 +86,19 @@ import {
 } from 'ag-grid-community';
 import type { ColDef, GridApi, GridReadyEvent } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
+import { useTransmitterApi } from '@/composables/tracsV2/useTransmitterApi';
+import { useUiStatePersistence } from '@/composables/tracsV2/useUiStatePersistence';
 
 ModuleRegistry.registerModules([AllEnterpriseModule]);
 
 const toast = useToast();
 const isDark = useDark();
-
-const PROFILE_OPTIONS = ['Detailed', 'Short', 'Minimal'] as const;
+const api = useTransmitterApi();
+const ui = useUiStatePersistence('ui_state:tracsV2:db:testProfiles:transmitter');
+ui.registerGrid('definitions');
+ui.registerGrid('profile');
+const DEFAULT_PROFILE_NAME = 'Detailed';
+const profileOptions = ref<string[]>([]);
 
 // ── shared column defaults ─────────────────────────────────────
 const defaultColDef: ColDef = {
@@ -116,20 +122,20 @@ interface ProfileDefinitionRow {
 const defRows = ref<ProfileDefinitionRow[]>([
   { profile_name: 'Detailed', enable: true, start_frequency: null, stop_frequency: null },
   { profile_name: 'Short',    enable: true, start_frequency: null, stop_frequency: null },
-  { profile_name: 'Minimal',  enable: true, start_frequency: null, stop_frequency: null },
+  { profile_name: 'Go/No-Go', enable: true, start_frequency: null, stop_frequency: null },
 ]);
 
 const defSelectedRows = ref<ProfileDefinitionRow[]>([]);
 const savingDefs = ref(false);
 const defGridApi = shallowRef<GridApi | null>(null);
 
-const defColumnDefs: ColDef[] = [
+const defColumnDefs = computed<ColDef[]>(() => [
   {
     field: 'profile_name',
     headerName: 'Profile Name',
     editable: true,
     cellEditor: 'agSelectCellEditor',
-    cellEditorParams: { values: [...PROFILE_OPTIONS] },
+    cellEditorParams: { values: [...profileOptions.value] },
     checkboxSelection: true,
     headerCheckboxSelection: true,
     minWidth: 160,
@@ -160,11 +166,12 @@ const defColumnDefs: ColDef[] = [
     minWidth: 170,
     flex: 1,
   },
-];
+]);
 
 function onDefGridReady(event: GridReadyEvent) {
   defGridApi.value = event.api;
   event.api.sizeColumnsToFit();
+  ui.onGridReady('definitions', event);
 }
 
 function onDefSelectionChanged(event: any) {
@@ -172,9 +179,10 @@ function onDefSelectionChanged(event: any) {
 }
 
 function addDefinitionRow() {
+  const defaultProfileName = profileOptions.value[0] ?? DEFAULT_PROFILE_NAME;
   defRows.value = [
     ...defRows.value,
-    { profile_name: 'Detailed', enable: true, start_frequency: null, stop_frequency: null },
+    { profile_name: defaultProfileName, enable: true, start_frequency: null, stop_frequency: null },
   ];
 }
 
@@ -189,11 +197,39 @@ async function saveDefinitions() {
   try {
     const rows: ProfileDefinitionRow[] = [];
     defGridApi.value?.forEachNode((n) => { if (n.data) rows.push(n.data as ProfileDefinitionRow); });
-    // TODO: replace with API call
-    await new Promise((r) => setTimeout(r, 300));
+    const bands = rows.map((r) => ({
+      profile_name: String(r.profile_name ?? ''),
+      enable: Boolean(r.enable),
+      start_frequency: r.start_frequency === null || r.start_frequency === undefined || r.start_frequency === ('' as any)
+        ? null
+        : Number(r.start_frequency),
+      stop_frequency: r.stop_frequency === null || r.stop_frequency === undefined || r.stop_frequency === ('' as any)
+        ? null
+        : Number(r.stop_frequency),
+    }));
+    const res = await api.saveSpuriousBandConfigs(bands);
+    if (res.error.value) {
+      toast.add({ severity: 'error', summary: 'Save Failed', detail: 'Unable to save Spurious Profiles Definitions.', life: 3500 });
+      return;
+    }
     toast.add({ severity: 'success', summary: 'Saved', detail: 'Spurious Profiles Definitions saved.', life: 3000 });
   } finally {
     savingDefs.value = false;
+  }
+}
+
+async function loadSpuriousBandConfigs() {
+  const res = await api.getSpuriousBandConfigs();
+  if (res.error.value) return;
+  const data = res.data.value as { bands?: ProfileDefinitionRow[] } | null;
+  const bands = Array.isArray(data?.bands) ? data!.bands : [];
+  if (bands.length > 0) {
+    defRows.value = bands.map((b) => ({
+      profile_name: String(b.profile_name ?? ''),
+      enable: Boolean(b.enable),
+      start_frequency: b.start_frequency ?? null,
+      stop_frequency: b.stop_frequency ?? null,
+    }));
   }
 }
 
@@ -213,7 +249,7 @@ const spuriousProfileRows = ref<SpuriousProfileRow[]>([]);
 const savingProfile = ref(false);
 const profileGridApi = shallowRef<GridApi | null>(null);
 
-const spuriousProfileColDefs: ColDef[] = [
+const spuriousProfileColDefs = computed<ColDef[]>(() => [
   { field: 'code',            headerName: 'Code',            editable: false, minWidth: 80  },
   { field: 'port',            headerName: 'Port',            editable: false, minWidth: 80  },
   { field: 'frequency_label', headerName: 'Freq Label',      editable: false, minWidth: 110 },
@@ -224,7 +260,7 @@ const spuriousProfileColDefs: ColDef[] = [
     editable: true,
     cellEditor: 'agRichSelectCellEditor',
     cellEditorParams: {
-      values: [...PROFILE_OPTIONS],
+      values: [...profileOptions.value],
       multiSelect: true,
       searchType: 'matchAny',
       filterList: true,
@@ -234,30 +270,114 @@ const spuriousProfileColDefs: ColDef[] = [
     minWidth: 220,
     flex: 1,
   },
-];
+]);
+
+async function loadTestPlanTypes() {
+  const res = await api.getTestPlanTypes();
+  if (res.error.value) {
+    toast.add({ severity: 'error', summary: 'Load Failed', detail: 'Unable to load test plan types.', life: 3500 });
+    return;
+  }
+
+  const options = Array.isArray(res.data.value) ? res.data.value as string[] : [];
+  profileOptions.value = options;
+  if (options.length > 0) {
+    defRows.value = options.map((profile_name) => ({
+      profile_name,
+      enable: true,
+      start_frequency: null,
+      stop_frequency: null,
+    }));
+  }
+}
 
 function onProfileGridReady(event: GridReadyEvent) {
   profileGridApi.value = event.api;
   event.api.sizeColumnsToFit();
+  ui.onGridReady('profile', event);
+}
+
+// Cache the full server-side spurious rows so we can preserve fields the
+// grid does not display (specification, tolerance, fbt*, etc.) when saving.
+interface SpuriousServerRow {
+  transmitter_code: string;
+  row: Record<string, any>;
+}
+const spuriousServerRows = ref<SpuriousServerRow[]>([]);
+
+function rowKey(code: string, port: string, label: string, freq: string | number | null): string {
+  return `${code}|${port}|${label}|${freq ?? ''}`;
 }
 
 async function loadSpuriousProfile() {
-  // TODO: replace with API call
-  toast.add({ severity: 'info', summary: 'Info', detail: 'No data source configured yet.', life: 3000 });
+  const res = await api.getParameterRows('spurious');
+  if (res.error.value) {
+    toast.add({ severity: 'error', summary: 'Load Failed', detail: 'Unable to load Spurious Profile rows.', life: 3500 });
+    return;
+  }
+  const data = res.data.value as { rows?: Array<{ transmitter_code: string; row: Record<string, any> }> } | null;
+  const rows = Array.isArray(data?.rows) ? data!.rows : [];
+  spuriousServerRows.value = rows.map((r) => ({ transmitter_code: r.transmitter_code, row: { ...r.row } }));
+  spuriousProfileRows.value = rows.map((r) => ({
+    code: String(r.row?.code ?? r.transmitter_code ?? ''),
+    port: String(r.row?.port ?? ''),
+    frequency_label: String(r.row?.frequency_label ?? ''),
+    frequency: r.row?.frequency === '' || r.row?.frequency === null || r.row?.frequency === undefined
+      ? null
+      : Number(r.row.frequency),
+    profiles: Array.isArray(r.row?.profiles) ? [...r.row.profiles] : [],
+  }));
 }
 
 async function saveSpuriousProfile() {
   savingProfile.value = true;
   try {
-    const rows: SpuriousProfileRow[] = [];
-    profileGridApi.value?.forEachNode((n) => { if (n.data) rows.push(n.data as SpuriousProfileRow); });
-    // TODO: replace with API call
-    await new Promise((r) => setTimeout(r, 300));
+    const editedRows: SpuriousProfileRow[] = [];
+    profileGridApi.value?.forEachNode((n) => { if (n.data) editedRows.push(n.data as SpuriousProfileRow); });
+
+    // Build a map of edited profiles[] keyed by (code|port|label|freq).
+    const editedByKey = new Map<string, string[]>();
+    for (const r of editedRows) {
+      editedByKey.set(
+        rowKey(r.code, r.port, r.frequency_label, r.frequency),
+        Array.isArray(r.profiles) ? [...r.profiles] : [],
+      );
+    }
+
+    // Merge edits into the cached server rows so we keep all other fields.
+    const payloadRows = spuriousServerRows.value.map((sr) => {
+      const key = rowKey(
+        String(sr.row?.code ?? sr.transmitter_code ?? ''),
+        String(sr.row?.port ?? ''),
+        String(sr.row?.frequency_label ?? ''),
+        sr.row?.frequency ?? '',
+      );
+      const editedProfiles = editedByKey.get(key);
+      const mergedRow = editedProfiles !== undefined
+        ? { ...sr.row, profiles: editedProfiles }
+        : sr.row;
+      return { transmitter_code: sr.transmitter_code, row: mergedRow };
+    });
+
+    const res = await api.saveParameterRows('spurious', { rows: payloadRows });
+    if (res.error.value) {
+      toast.add({ severity: 'error', summary: 'Save Failed', detail: 'Unable to save Spurious Profile.', life: 3500 });
+      return;
+    }
     toast.add({ severity: 'success', summary: 'Saved', detail: 'Spurious Profile saved.', life: 3000 });
   } finally {
     savingProfile.value = false;
   }
 }
+
+onMounted(async () => {
+  // Sequence test plan types (fallback definitions) before saved band configs
+  // so that saved bands override the fallback rather than racing with it.
+  await loadTestPlanTypes();
+  await loadSpuriousBandConfigs();
+  await loadSpuriousProfile();
+  await ui.load();
+});
 </script>
 
 <style scoped>

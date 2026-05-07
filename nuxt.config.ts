@@ -29,6 +29,11 @@ export default defineNuxtConfig({
       APP_NAME: pkg.name,
       // eslint-disable-next-line node/prefer-global/process
       APP_MODE: process.env?.NODE_ENV,
+      // API base paths — override via .env (NUXT_PUBLIC_API_BASE, etc.)
+      apiBase: '/api/go/v1',
+      iamBase: '/iam/api/v1',
+      restApiBase: '/restApi',
+      simulatorApiBase: '/simulator/api/go/v1',
     },
   },
 

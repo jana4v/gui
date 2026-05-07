@@ -194,8 +194,13 @@ async function handleSave() {
 
 async function handleDelete() {
   if (isNew.value) return;
-  const success = await store.remove(props.transmitter!.code);
-  if (success) emit('deleted');
+  const tx = props.transmitter!;
+  const label = tx.name ? `${tx.name} (${tx.code})` : tx.code;
+  const { confirmCriticalDelete } = useConfirmation();
+  confirmCriticalDelete('Transmitter', label, async () => {
+    const success = await store.remove(tx.code);
+    if (success) emit('deleted');
+  });
 }
 </script>
 

@@ -5,9 +5,7 @@ import { initMenu } from '@/composables/tm/SideNav'
 definePageMeta({ title: 'Telemetry - Upload TM' })
 initMenu(2)
 
-const gatewayBase = import.meta.client
-  ? `http://${window.location.host}/api/go/v1`
-  : ''
+const { apiBase: gatewayBase } = useRuntimeConfig().public
 
 // ── State ──────────────────────────────────────────────────────────────────
 const selectedFile = ref<File | null>(null)

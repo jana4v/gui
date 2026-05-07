@@ -13,8 +13,8 @@ export async function useAPIFetch(path, options = {}) {
   const config = useRuntimeConfig()
 
   const baseURL
-    = config?.public?.apiBase
-      || (process.client ? `http://${window.location.hostname}/restApi` : '/restApi')
+    = config?.public?.restApiBase
+      || '/restApi'
 
   const { data, error } = await useFetch(path, {
     ...options,

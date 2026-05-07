@@ -35,9 +35,7 @@ interface FixedRow {
   rangeOptions: string[]
 }
 
-const simBase = import.meta.client
-  ? `http://${window.location.hostname}/simulator/api/go/v1`
-  : ''
+const { simulatorApiBase: simBase } = useRuntimeConfig().public
 
 const colorModeStore = useColorModeStore()
 const tmFilters = useTmFiltersStore()

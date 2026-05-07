@@ -34,9 +34,7 @@ interface DataMapRow {
 }
 
 const colorModeStore = useColorModeStore()
-const gatewayBase = import.meta.client
-  ? `http://${window.location.host}/api/go/v1`
-  : ''
+const { apiBase: gatewayBase } = useRuntimeConfig().public
 
 const rowData = ref<DataMapRow[]>([])
 const deletedIds = ref<number[]>([])

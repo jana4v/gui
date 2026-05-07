@@ -56,6 +56,7 @@
 <script setup lang="ts">
 import { initMenu } from '@/composables/tracsV2/SideNav';
 import { useCalibrationDataApi } from '@/composables/tracsV2/useCalibrationDataApi';
+import { useUiStatePersistence } from '@/composables/tracsV2/useUiStatePersistence';
 import { useToast } from 'primevue/usetoast';
 
 const activeSection = ref('uplink');
@@ -72,6 +73,11 @@ definePageMeta({
 });
 
 initMenu(1);
+
+// Persist toolbar selections across navigation/reloads.
+const ui = useUiStatePersistence('ui_state:tracsV2:calibration');
+ui.bindRefs({ activeSection, activeCalId, includeSpuriousBands });
+onMounted(() => { void ui.load(); });
 
 async function onGenerateReport() {
   if (!['cal_sg', 'inject_cal', 'downlink'].includes(activeSection.value)) {

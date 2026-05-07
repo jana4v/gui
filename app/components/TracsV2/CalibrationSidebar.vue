@@ -85,4 +85,22 @@ function select(section: string) {
 .nav-label {
   flex: 1;
 }
+
+/* ── Light theme overrides ──────────────────────────────────────────────── */
+html:not(.dark) .cal-sidebar {
+  background-color: var(--p-surface-0);
+  border-right-color: var(--p-content-border-color);
+}
+html:not(.dark) .cal-nav-item {
+  color: var(--p-text-color);
+}
+html:not(.dark) .cal-nav-item:hover {
+  background: var(--p-surface-100);
+  color: var(--p-text-color);
+}
+html:not(.dark) .cal-nav-item.active {
+  background: var(--p-primary-50);
+  color: var(--p-primary-color);
+  border-left-color: var(--p-primary-color);
+}
 </style>
