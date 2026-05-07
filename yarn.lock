@@ -6270,6 +6270,11 @@ ag-charts-types@13.1.0:
   resolved "https://registry.yarnpkg.com/ag-charts-types/-/ag-charts-types-13.1.0.tgz#37e01f30fe70dc2613b10a4ccd21ec661b032639"
   integrity sha512-DytRM3CXli+Y013SC1Mr8lQBrhVTACK+11ilDHOhwUM0sRpmGuR51XFGcBKOliW1Vas1AycP31Cm3Pp0jx3hqw==
 
+ag-charts-types@13.2.1:
+  version "13.2.1"
+  resolved "https://registry.yarnpkg.com/ag-charts-types/-/ag-charts-types-13.2.1.tgz#2fcaff60dbf5e96fe2fcd6776a2c8b7a8666e712"
+  integrity sha512-r7veb3QqJtIKlXmeUsLR4/oDPwmHxFI2tmbZra/203mdaz3uwQUrrgYNg628nrK+7L2YxXnwGc6L05tWjLLjNQ==
+
 ag-charts-vue3@^11.3.2:
   version "11.3.2"
   resolved "https://registry.yarnpkg.com/ag-charts-vue3/-/ag-charts-vue3-11.3.2.tgz#9f03008e1978492673a8009bf85cd40272cb8799"
@@ -6284,6 +6289,13 @@ ag-grid-community@35.1.0:
   dependencies:
     ag-charts-types "13.1.0"
 
+ag-grid-community@35.2.1:
+  version "35.2.1"
+  resolved "https://registry.yarnpkg.com/ag-grid-community/-/ag-grid-community-35.2.1.tgz#ee7fbc95b67d8c625af699822770e5cc9229a338"
+  integrity sha512-ycmGI+1EbUT7i3eg/Kgi1owwnkdHXRufo10Xm6cfSsVPM3TMpvlbLgi28KIPt9DGHZWHq9fOBn7nxMNdv1Yaow==
+  dependencies:
+    ag-charts-types "13.2.1"
+
 ag-grid-enterprise@35.1.0:
   version "35.1.0"
   resolved "https://registry.yarnpkg.com/ag-grid-enterprise/-/ag-grid-enterprise-35.1.0.tgz#1ce5036be13e3c44dc7762e659dac7d74e8a298f"
@@ -6294,12 +6306,12 @@ ag-grid-enterprise@35.1.0:
     ag-charts-community "13.1.0"
     ag-charts-enterprise "13.1.0"
 
-ag-grid-vue3@35.1.0:
-  version "35.1.0"
-  resolved "https://registry.yarnpkg.com/ag-grid-vue3/-/ag-grid-vue3-35.1.0.tgz#89a1ba0bdbed3860bb707166c3c647480b9e5180"
-  integrity sha512-BvM7yrFxRB/r5hZ4xSyE6T2lU2Rj+Ls6RH5tTu/n8DmhCTmLj4QCEkoU7EuaE0/Az3uEHOubYMaCX4jcDf181A==
+ag-grid-vue3@35.2.1:
+  version "35.2.1"
+  resolved "https://registry.yarnpkg.com/ag-grid-vue3/-/ag-grid-vue3-35.2.1.tgz#98a9d1617f93604dd0bcdf19d5bf390049bcf62b"
+  integrity sha512-6QYw9QF9UKKiq+FKSehU33ABEtrNuKkqdrLO0SXtRD03u0ETlq/VYavfcB64hj9hvdjJJ9/PD0+vd0MyQWCtyA==
   dependencies:
-    ag-grid-community "35.1.0"
+    ag-grid-community "35.2.1"
 
 agent-base@^7.1.0, agent-base@^7.1.2:
   version "7.1.4"
